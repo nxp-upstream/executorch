@@ -21,6 +21,7 @@ from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.portable import export_to_edge, save_pte_program
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 import executorch.exir as exir
+from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -33,8 +34,9 @@ def get_model_and_inputs_from_name(model_name: str):
     calibration_inputs = None #TBD
     # Case 1: Model is defined in this file
     if model_name in models.keys():
-        model = models[model_name]()
-        example_inputs = models[model_name].example_input
+        m = models[model_name]()
+        model = m.get_eager_model()
+        example_inputs = (next(m.get_example_inputs())[0],) #TODO (Robert): Needs to redesign the CifarNet example.
     # Case 2: Model is defined in executorch/examples/models/
     elif model_name in MODEL_NAME_TO_MODEL.keys():
         logging.warning(
@@ -49,7 +51,7 @@ def get_model_and_inputs_from_name(model_name: str):
     return model, example_inputs, calibration_inputs
 
 models = {
-    "cifar10": None, #TBD
+    "cifar10": CifarNet,
 }
 
 def post_training_quantize(model, calibration_inputs):

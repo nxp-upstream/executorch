@@ -1,5 +1,4 @@
-# Copyright (c) 2024 NXP
-# All rights reserved.
+# Copyright 2024 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,13 +14,15 @@ import torch
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 from torch.ao.quantization.utils import is_per_channel
 
+from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+
 from executorch.backends.arm.quantizer.arm_quantizer import get_symmetric_quantization_config
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.examples.portable import export_to_edge, save_pte_program
+from executorch.examples.portable.utils import export_to_edge, save_pte_program
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-import executorch.exir as exir
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -157,13 +158,21 @@ if __name__ == "__main__":
 
     # 4. Export to edge program
     # edge_program = exir.to_edge(exir_program_aten)
-    edge_program = export_to_edge(exir_program_aten, example_inputs) # TODO for now reusing the default for edge_compile_config
+    edge_program = export_to_edge(exir_program_aten, example_inputs, verbose=args.debug) # TODO for now reusing the default for edge_compile_config
                                                          # (compared to Arm)
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
 
     # 5. Delegate to Neutron
     if args.delegate is True:
-        logging.warning("Neutron Delegate is not available yet")
+        logging.info("Executing Neutron Partitioner and Delegate")
+        edge_program = edge_program.to_backend(
+            NeutronPartitioner(
+                generate_neutron_compile_spec(
+                    "rt700"
+                )
+            )
+        )
+        logging.debug(f"Lowered graph:\n{edge_program.exported_program().graph}")
 
     # 6. Export to ExecuTorch program
     try:

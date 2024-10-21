@@ -6,7 +6,8 @@
 
 import argparse
 import os.path
-from typing import Iterator
+from typing import Iterator, Tuple
+import itertools
 
 import torch
 import torch.nn as nn
@@ -26,15 +27,21 @@ logging.basicConfig(level=logging.INFO)
 class CifarNet(model_base.EagerModelBase):
 
     def __init__(self, batch_size: int = 1, pth_file: str = 'cifar_net.pth'):
-        self.batch_size = batch_size
+        self.batch_size = batch_size  # TODO(Robert): Do we need the batch size at all?
         self.pth_file = pth_file
 
     def get_eager_model(self) -> torch.nn.Module:
         return get_model(self.batch_size, state_dict_file=self.pth_file)
 
-    def get_example_inputs(self) -> Iterator[torch.Tensor]:
-        tl = get_test_loader(self.batch_size)
-        return iter(tl)
+    def get_example_inputs(self) -> Tuple[torch.Tensor]:
+        tl = get_test_loader()
+        ds, _ = tl.dataset[0] # Dataset returns the data and the class. We need just the data.
+        return (ds.unsqueeze(0),)
+
+    def get_calibration_inputs(self, batch_size: int = 1) -> Iterator[torch.Tensor]:
+        tl = get_test_loader(batch_size)
+        get_first = lambda a, b: (a,)
+        return itertools.starmap(get_first, iter(tl))
 
 
 class CifarNetModel(nn.Module):

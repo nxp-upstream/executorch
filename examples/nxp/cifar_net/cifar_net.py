@@ -4,9 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import itertools
+import logging
 import os.path
 from typing import Iterator, Tuple
-import itertools
 
 import torch
 import torch.nn as nn
@@ -14,10 +15,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+
 from executorch import exir
 from executorch.examples.models import model_base
-
-import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -25,19 +25,19 @@ logging.basicConfig(level=logging.INFO)
 
 class CifarNet(model_base.EagerModelBase):
 
-    def __init__(self, batch_size: int = 1, pth_file: str = 'cifar_net.pth'):
+    def __init__(self, batch_size: int = 1, pth_file: str | None = None):
         self.batch_size = batch_size  # TODO(Robert): Do we need the batch size at all?
-        self.pth_file = pth_file
+        self.pth_file = pth_file or os.path.join(os.path.dirname(__file__), 'cifar_net.pth')
 
     def get_eager_model(self) -> torch.nn.Module:
         return get_model(self.batch_size, state_dict_file=self.pth_file)
 
     def get_example_inputs(self) -> Tuple[torch.Tensor]:
         tl = get_test_loader()
-        ds, _ = tl.dataset[0] # Dataset returns the data and the class. We need just the data.
+        ds, _ = tl.dataset[0]  # Dataset returns the data and the class. We need just the data.
         return (ds.unsqueeze(0),)
 
-    def get_calibration_inputs(self, batch_size: int = 1) -> Iterator[torch.Tensor]:
+    def get_calibration_inputs(self, batch_size: int = 1) -> Iterator[Tuple[torch.Tensor]]:
         tl = get_test_loader(batch_size)
         get_first = lambda a, b: (a,)
         return itertools.starmap(get_first, iter(tl))
@@ -161,6 +161,37 @@ def get_model(batch_size: int = 1, state_dict_file: str | None = None, train: bo
     return cifar_net
 
 
+def get_cifarnet_calibration_data(num_images: int = 100) -> tuple[torch.Tensor]:
+    """ Return a tuple containing 1 tensor (for the 1 model input) and the tensor will have shape
+         [`num_images`, 3, 32, 32].
+    """
+    loader = iter(get_train_loader(1))  # The train loader shuffles the images.
+    images = [image for image, _ in itertools.islice(loader, num_images)]
+    tensor = torch.vstack(images)
+    return (tensor,)
+
+
+def test_cifarnet_model(cifar_net: nn.Module, batch_size: int = 1) -> float:
+    """ Test the CifarNet model on the CifarNet10 testing dataset and return the accuracy.
+
+        This function may at some point in the future be integrated into the `CifarNet` class.
+
+        :param cifar_net: The model to test with the CifarNet10 testing dataset.
+        :return: The accuracy of the model (between 0 and 1).
+    """
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for data in get_test_loader(batch_size):
+            images, labels = data
+            outputs = cifar_net(images)
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += torch.sum(predicted == labels).item()
+
+    return correct / total
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--pte-file', required=False,
@@ -181,18 +212,8 @@ if __name__ == '__main__':
 
     if args.test:
         logger.info('Running tests.')
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for data in get_test_loader(args.batch_size):
-                images, labels = data
-                outputs = cifar_net(images)
-                # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-        logger.info(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+        accuracy = test_cifarnet_model(cifar_net, args.batch_size)
+        logger.info(f'Accuracy of the network on the 10000 test images: {accuracy}')
 
     # # Save the ONNX version.
     # torch.onnx.export(cifar_net, (torch.rand([args.batch_size, 3, 32, 32])), 'cifar_net.onnx', opset_version=9)

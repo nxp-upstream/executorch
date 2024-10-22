@@ -6,34 +6,34 @@
 # Example script to compile the model for the NXP Neutron NPU
 
 import argparse
-import logging
 import io
-from collections.abc import Iterable
+import logging
+from typing import Iterator
 
 import torch
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
-from torch.ao.quantization.utils import is_per_channel
-
-from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
-from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 
 from executorch.backends.arm.quantizer.arm_quantizer import get_symmetric_quantization_config
+from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
+from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.examples.portable.utils import export_to_edge, save_pte_program
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
+from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
+from executorch.examples.portable.utils import export_to_edge, save_pte_program
+from executorch.exir import ExecutorchBackendConfig
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
 
 def get_model_and_inputs_from_name(model_name: str):
     """Given the name of an example pytorch model, return it, example inputs and calibration inputs (can be None)
 
     Raises RuntimeError if there is no example model corresponding to the given name.
     """
-    calibration_inputs = None #TBD
+    calibration_inputs = None  # TBD
     # Case 1: Model is defined in this file
     if model_name in models.keys():
         m = models[model_name]()
@@ -53,11 +53,19 @@ def get_model_and_inputs_from_name(model_name: str):
 
     return model, example_inputs, calibration_inputs
 
+
 models = {
     "cifar10": CifarNet,
 }
 
-def post_training_quantize(model, calibration_inputs):
+
+def post_training_quantize(model, calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]]):
+    """ Quantize the provided model.
+
+    :param model: Aten model to quantize.
+    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
+                                input. Or an iterator over such tuples.
+    """
     # Based on executorch.examples.arm.aot_amr_compiler.quantize
     logging.info("Quantizing model")
     logging.debug(f"Original model: {model}")
@@ -67,11 +75,11 @@ def post_training_quantize(model, calibration_inputs):
     m = prepare_pt2e(model, quantizer)
     # Calibration:
     logging.debug(f"Calibrating model")
-    if not isinstance(calibration_inputs, tuple): # TODO(Robert): Assumption that calibration_inputs is finite.
+    if not isinstance(calibration_inputs, tuple):  # TODO(Robert): Assumption that calibration_inputs is finite.
         get_batch_size = lambda data: data[0].shape[0]
         for i, data in enumerate(calibration_inputs):
             if i % (1000 // get_batch_size(data)) == 0:
-                logging.debug(f"{i*get_batch_size(data)} inputs done")
+                logging.debug(f"{i * get_batch_size(data)} inputs done")
             m(*data)
     else:
         m(*calibration_inputs)
@@ -80,14 +88,13 @@ def post_training_quantize(model, calibration_inputs):
     return m
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {set(list(models.keys())+list(MODEL_NAME_TO_MODEL.keys()))}",
+        help=f"Provide model name. Valid ones: {set(list(models.keys()) + list(MODEL_NAME_TO_MODEL.keys()))}",
     )
     parser.add_argument(
         "-d",
@@ -117,12 +124,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
     )
+    parser.add_argument(
+        "-t",
+        "--test",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Test the selected model and print the accuracy between 0 and 1.",
+    )
 
     args = parser.parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
-
 
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(args.model_name)
@@ -139,7 +153,7 @@ if __name__ == "__main__":
     if args.quantize:
         if args.quantize and not args.so_library:
             logging.warning(
-              "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
+                "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
                 + "This is required for running quantized models with unquantized input."
             )
         if calibration_inputs is None:
@@ -156,10 +170,23 @@ if __name__ == "__main__":
             logging.debug(f"Loading custom operator library {args.so_library}")
             torch.ops.load_library(args.so_library)
 
+    if args.test:
+        match args.model_name:
+            case 'cifar10':
+                accuracy = test_cifarnet_model(exir_program_aten)
+
+            case _:
+                raise NotImplementedError(f'Testing of model `{args.model_name}` is not yet supported.')
+
+        cyan, end_format = '\033[96m', '\033[0m'
+        quantized_str = 'quantized ' if args.quantize else ''
+        print(f'\n{cyan}Accuracy of the {quantized_str}`{args.model_name}`: {accuracy}{end_format}\n')
+
     # 4. Export to edge program
     # edge_program = exir.to_edge(exir_program_aten)
-    edge_program = export_to_edge(exir_program_aten, example_inputs, verbose=args.debug) # TODO for now reusing the default for edge_compile_config
-                                                         # (compared to Arm)
+    edge_program = export_to_edge(exir_program_aten, example_inputs,
+                                  verbose=args.debug)  # TODO for now reusing the default for edge_compile_config
+    # (compared to Arm)
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
 
     # 5. Delegate to Neutron
@@ -190,10 +217,12 @@ if __name__ == "__main__":
         else:
             raise e
 
+
     def executorch_program_to_str(ep, verbose=False):
         f = io.StringIO()
         ep.dump_executorch_program(out=f, verbose=verbose)
         return f.getvalue()
+
 
     logging.debug(f"Executorch program (short):\n{executorch_program_to_str(exec_prog)}")
     logging.debug(f"Executorch program (complete):\n{executorch_program_to_str(exec_prog, verbose=True)}")

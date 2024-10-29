@@ -6,6 +6,7 @@
 # Partitioner for the NXP Neutron NPU
 
 import logging
+import operator
 from typing import final, List
 
 import torch
@@ -59,11 +60,67 @@ class NeutronPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
 
+    def is_quant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        }
+    
+    def is_dequant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        }
+
+    def tag_clusters(self, nodes):
+        def get_dequant_inputs(node):
+            return [
+                input_node for input_node in node.args
+                if isinstance(input_node, torch.fx.node.Node) and self.is_dequant_node(input_node)
+            ]
+
+        def get_quant_outputs(node):
+            quant_outputs = []
+            for user in node.users:
+                if user.op == "call_function" and user.target == operator.getitem:
+                    for grandchild in user.users:
+                        if self.is_quant_node(grandchild):
+                            quant_outputs.append(grandchild)
+                elif self.is_quant_node(user):
+                    quant_outputs.append(user)
+            return quant_outputs
+
+        def tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs):
+            logging.info(f"Tagging node {node} as {cluster_name}")
+            node.meta["cluster"] = cluster_name
+            for dequant_node in dequant_inputs:
+                dequant_node.meta["cluster"] = cluster_name
+            for quant_node in quant_outputs:
+                quant_node.meta["cluster"] = cluster_name
+
+        for node in nodes:
+            if node.op == "call_function":
+                dequant_inputs = get_dequant_inputs(node)
+                if dequant_inputs:
+                    quant_outputs = get_quant_outputs(node)
+                    if quant_outputs:
+                        cluster_name = f"{node.name}_cluster"
+                        tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs)
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logging.info("NeutronPartitioner::partition")
         partition_tags = {}
+
+        graph_module = exported_program.graph_module
+        nodes = list(graph_module.graph.nodes)
+
+        self.tag_clusters(nodes)
+        
+        graph_module.recompile()
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

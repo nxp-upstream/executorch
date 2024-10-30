@@ -9,6 +9,7 @@
 import argparse
 import logging
 import io
+from collections.abc import Iterable
 
 import torch
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
@@ -36,7 +37,8 @@ def get_model_and_inputs_from_name(model_name: str):
     if model_name in models.keys():
         m = models[model_name]()
         model = m.get_eager_model()
-        example_inputs = (next(m.get_example_inputs())[0],) #TODO (Robert): Needs to redesign the CifarNet example.
+        example_inputs = m.get_example_inputs()
+        calibration_inputs = m.get_calibration_inputs(64)
     # Case 2: Model is defined in executorch/examples/models/
     elif model_name in MODEL_NAME_TO_MODEL.keys():
         logging.warning(
@@ -63,7 +65,15 @@ def post_training_quantize(model, calibration_inputs):
     quantizer.set_global(operator_config)
     m = prepare_pt2e(model, quantizer)
     # Calibration:
-    m(*calibration_inputs)
+    logging.debug(f"Calibrating model")
+    if not isinstance(calibration_inputs, tuple): # TODO(Robert): Assumption that calibration_inputs is finite.
+        get_batch_size = lambda data: data[0].shape[0]
+        for i, data in enumerate(calibration_inputs):
+            if i % (1000 // get_batch_size(data)) == 0:
+                logging.debug(f"{i*get_batch_size(data)} inputs done")
+            m(*data)
+    else:
+        m(*calibration_inputs)
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
     return m

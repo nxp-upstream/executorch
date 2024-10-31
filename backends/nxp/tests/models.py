@@ -16,3 +16,13 @@ class Conv2dModule(torch.nn.Module):
 
     def forward(self, x):
         return self.conv(x)
+
+
+class SoftmaxModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.softmax = torch.nn.Softmax()
+
+    def forward(self, x):
+        return self.softmax(x)

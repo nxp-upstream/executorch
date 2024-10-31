@@ -7,7 +7,7 @@
 import torch
 
 from executorch import exir
-from executorch.backends.nxp.partition.node_format_inference import NodeFormatInference, NodeFormat
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.backends.nxp.tests.models import Conv2dModule, SoftmaxModule
 
 

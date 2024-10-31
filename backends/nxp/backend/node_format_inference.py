@@ -21,11 +21,8 @@ class NodeFormat(Enum):
     # Node's output in NCHW format
     CHANNELS_FIRST = 0
 
-    # Node's output in NHWC format
-    CHANNELS_LAST = 1
-
     # Node's output format has no meaning
-    FORMATLESS = 2
+    FORMATLESS = 1
 
     # Format has not been identified
     NONE = 2

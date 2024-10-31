@@ -11,7 +11,7 @@ class Conv2dModule(torch.nn.Module):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
-            in_channels=4, out_channels=8, kernel_size=3, bias=True, stride=2, padding=3, dilation=1
+            in_channels=4, out_channels=8, kernel_size=3, bias=True, stride=2, dilation=1
         )
 
     def forward(self, x):

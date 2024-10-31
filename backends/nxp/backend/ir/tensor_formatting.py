@@ -7,6 +7,8 @@
 #
 from enum import Enum
 
+from executorch.backends.nxp.backend.node_format_inference import NodeFormat
+
 
 class TensorFormat(Enum):
     CHANNELS_FIRST = 0
@@ -34,3 +36,20 @@ class TensorFormat(Enum):
 
     def is_channels_last(self) -> bool:
         return self == TensorFormat.CHANNELS_LAST
+
+    @staticmethod
+    def from_node_format(node_format: NodeFormat):
+        if node_format.is_channels_first():
+            return TensorFormat.CHANNELS_LAST
+        elif node_format == NodeFormat.FORMATLESS:
+            return TensorFormat.FORMATLESS
+        else:
+            return TensorFormat.NONE
+
+    def to_node_format(self):
+        if self == TensorFormat.CHANNELS_LAST:
+            return NodeFormat.CHANNELS_FIRST
+        elif self == TensorFormat.FORMATLESS:
+            return NodeFormat.FORMATLESS
+        else:
+            return NodeFormat.NONE

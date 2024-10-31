@@ -164,7 +164,7 @@ class ModelBuilder:
 
         new_tensor = self.duplicate_tensor(t_tensor, t_tensor.name + "_channels_first", empty_buffer=True)
         new_tensor.shape = translator.channels_last_shape_to_channels_first(t_tensor.shape)
-        new_tensor.tensor_format = new_tensor.tensor_format.to_onnx()
+        new_tensor.tensor_format = new_tensor.tensor_format.to_node_format()
 
         perm = translator.create_channels_last_to_channels_first_permutation(t_tensor.rank)
         transpose = self._create_transpose_operator(t_tensor, new_tensor, perm)
@@ -294,7 +294,7 @@ class ModelBuilder:
 
                 new_input = self.duplicate_tensor(input_tensor, input_tensor.name + "_channels_first")
                 new_input.shape = translator.channels_last_shape_to_channels_first(input_tensor.shape)
-                new_input.tensor_format = input_tensor.tensor_format.to_onnx()
+                new_input.tensor_format = input_tensor.tensor_format.to_node_format()
 
                 perm = translator.create_channels_first_to_channels_last_permutation(input_tensor.rank)
                 transpose = self._create_transpose_operator(new_input, input_tensor, perm)
@@ -538,45 +538,37 @@ class ModelBuilder:
 
     """ -------------------- 'quality of life' functions. -------------------- """
 
-    # def operator_can_be_skipped(self, t_op: tflite_model.Operator,
-    #                             onnx_inspector: ONNXModelInspector | None = None) -> bool:
-    #     """ Determine whether operator 't_op' uses both a graph input and a graph output tensor. If it does, it cannot
-    #          be skipped.
-    #
-    #     :param t_op: TFLite operator to check.
-    #     :param onnx_inspector: ONNXModelInspector object for the current conversion.
-    #     :return: True, if 't_op' doesn't use both a graph input and a graph output.
-    #     """
-    #     sub_graph = self.get_sub_graph()
-    #     graph_inputs = sub_graph.inputs.tmp_inputs
-    #     graph_outputs = sub_graph.outputs.tmp_outputs
-    #
-    #     produces_graph_output = any(op_output in graph_outputs for op_output in t_op.tmp_outputs)
-    #
-    #     consumes_graph_input = False
-    #     for op_input in t_op.tmp_inputs:
-    #         root = self._skipped_output_map.get(op_input, op_input)
-    #         if root in graph_inputs:
-    #             consumes_graph_input = True
-    #
-    #     if produces_graph_output and consumes_graph_input:
-    #         # The input and output would be disconnected.
-    #         return False
-    #
-    #     if onnx_inspector is None:
-    #         input_data_is_known = all_tensors_are_static(*t_op.tmp_inputs)
-    #     else:
-    #         input_data_is_known = all(
-    #             tensor_has_data(inpt) or
-    #             onnx_inspector.try_get_inferred_tensor_data(inpt.name) is not None for inpt in t_op.tmp_inputs
-    #         )
-    #
-    #     if produces_graph_output and input_data_is_known:
-    #         # If the operator is skipped, the output tensor would be assigned static data, which is not allowed for
-    #         #  model outputs.
-    #         return False
-    #
-    #     return True
+    def operator_can_be_skipped(self, t_op: tflite_model.Operator) -> bool:
+        """ Determine whether operator 't_op' uses both a graph input and a graph output tensor. If it does, it cannot
+             be skipped.
+
+        :param t_op: TFLite operator to check.
+        :return: True, if 't_op' doesn't use both a graph input and a graph output.
+        """
+        sub_graph = self.get_sub_graph()
+        graph_inputs = sub_graph.inputs.tmp_inputs
+        graph_outputs = sub_graph.outputs.tmp_outputs
+
+        produces_graph_output = any(op_output in graph_outputs for op_output in t_op.tmp_outputs)
+
+        consumes_graph_input = False
+        for op_input in t_op.tmp_inputs:
+            root = self._skipped_output_map.get(op_input, op_input)
+            if root in graph_inputs:
+                consumes_graph_input = True
+
+        if produces_graph_output and consumes_graph_input:
+            # The input and output would be disconnected.
+            return False
+
+        input_data_is_known = all_tensors_are_static(*t_op.tmp_inputs)
+
+        if produces_graph_output and input_data_is_known:
+            # If the operator is skipped, the output tensor would be assigned static data, which is not allowed for
+            #  model outputs.
+            return False
+
+        return True
 
     def turn_operator_to_identity(self, t_op: tflite_model.Operator):
         """ Turn the operator 't_op' to a Transpose operator, which does nothing.

@@ -17,6 +17,7 @@ from typing import List, Optional, Tuple, Any, Sequence, Collection
 
 
 import numpy as np
+import torch
 
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 import executorch.backends.nxp.backend.ir.logger as logger
@@ -677,59 +678,29 @@ def get_min_value_for_type(dtype: np.dtype) -> any:
         logger.e(logger.Code.INTERNAL_ERROR, f"translator.get_min_value_for_type(): unexpected type {dtype.name}.")
 
 
-# def convert_data_type(o_type: onnx.TensorProto.DataType) -> TensorType:
-#     """ Convert ONNX DataType to TFLite TensorType """
-#
-#     if o_type == onnx.TensorProto.UNDEFINED:
-#         logger.e(logger.Code.CONVERSION_IMPOSSIBLE, "Cannot convert ONNX DataType 'UNDEFINED' to TFLite.")
-#
-#     elif o_type == onnx.TensorProto.FLOAT:
-#         return TensorType.FLOAT32
-#
-#     elif o_type == onnx.TensorProto.UINT8:
-#         return TensorType.UINT8
-#
-#     elif o_type == onnx.TensorProto.INT8:
-#         return TensorType.INT8
-#
-#     elif o_type == onnx.TensorProto.UINT16:
-#         return TensorType.UINT16
-#
-#     elif o_type == onnx.TensorProto.INT16:
-#         return TensorType.INT16
-#
-#     elif o_type == onnx.TensorProto.INT32:
-#         return TensorType.INT32
-#
-#     elif o_type == onnx.TensorProto.INT64:
-#         return TensorType.INT64
-#
-#     elif o_type == onnx.TensorProto.STRING:
-#         return TensorType.STRING
-#
-#     elif o_type == onnx.TensorProto.BOOL:
-#         return TensorType.BOOL
-#
-#     elif o_type == onnx.TensorProto.FLOAT16:
-#         return TensorType.FLOAT16
-#
-#     elif o_type == onnx.TensorProto.DOUBLE:
-#         return TensorType.FLOAT64
-#
-#     elif o_type == onnx.TensorProto.UINT32:
-#         return TensorType.UINT32
-#
-#     elif o_type == onnx.TensorProto.UINT64:
-#         return TensorType.UINT64
-#
-#     elif o_type == onnx.TensorProto.COMPLEX64:
-#         return TensorType.COMPLEX64
-#
-#     elif o_type == onnx.TensorProto.COMPLEX128:
-#         return TensorType.COMPLEX128
-#
-#     elif o_type == onnx.TensorProto.BFLOAT16:
-#         logger.e(logger.Code.CONVERSION_IMPOSSIBLE, "Cannot convert ONNX DataType 'BFLOAT16' to TFLite.")
+def convert_data_type(torch_type: torch.TensorType) -> TensorType:
+    """ Convert Torch DataType to TFLite TensorType """
+
+    if torch_type == torch.float32:
+        return TensorType.FLOAT32
+
+    elif torch_type == torch.uint8:
+        return TensorType.UINT8
+
+    elif torch_type == torch.int8:
+        return TensorType.INT8
+
+    elif torch_type == torch.int32:
+        return TensorType.INT32
+
+    elif torch_type == torch.int64:
+        return TensorType.INT64
+
+    elif torch_type == torch.bool:
+        return TensorType.BOOL
+
+    else:
+        logger.e(logger.Code.NOT_IMPLEMENTED, f"Conversion of Torch type '{torch_type}' not supported.")
 
 
 def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:

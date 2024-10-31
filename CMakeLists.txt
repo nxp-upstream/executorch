@@ -147,6 +147,8 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
+option(EXECUTORCH_BUILD_NXP_NEUTRON "Build the NXP Neutron NPU library" OFF)
+
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
@@ -573,6 +575,10 @@ endif()
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+if(EXECUTORCH_BUILD_NXP_NEUTRON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/nxp)
 endif()
 
 if(EXECUTORCH_BUILD_MPS)

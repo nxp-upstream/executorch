@@ -19,6 +19,10 @@ using namespace std;
 namespace torch {
 namespace executor {
 
+//All the memory need to be aligned with 16
+#define BUFFER_ALIGNMENT 16
+#define ALIGN_SIZE(size) ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
+
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
     int numInputs = 0;
@@ -62,20 +66,22 @@ class NeutronBackend final : public PyTorchBackendInterface {
     }
     uint32_t microcodeSize = buffer[6];
     uint32_t weightsSize = buffer[7];
-    cfg->numInputs = buffer[9];
-    cfg->numOutputs = buffer[10];
+    cfg->numInputs = buffer[11];
+    cfg->numOutputs = buffer[12];
     cfg->mcfg.microcode = static_cast<const uint8_t*>(processed->data());
-    cfg->mcfg.weights = static_cast<const uint8_t*>(cfg->mcfg.microcode) + microcodeSize;
-    cfg->mcfg.kernels = static_cast<const uint8_t*>(cfg->mcfg.weights) + weightsSize;
+    cfg->mcfg.weights = static_cast<const uint8_t*>(cfg->mcfg.microcode) + ALIGN_SIZE(microcodeSize);
+    cfg->mcfg.kernels = static_cast<const uint8_t*>(cfg->mcfg.weights) + ALIGN_SIZE(weightsSize);
 
     // Allocate place for input and output pointers.
     cfg->dcfg.inputs = static_cast<const void**>(allocator->allocate(cfg->numInputs * sizeof(void*)));
     cfg->dcfg.outputs = static_cast<void**>(allocator->allocate(cfg->numOutputs * sizeof(void*)));
+    // Allocate place for NeutronModelHandle
+    cfg->nmh = static_cast<NeutronModelHandle>(allocator->allocate(neutronGetModelContextSize()));
     
     // Prepare data for through neutron driver.
     NeutronError neutronRC = neutronModelPrepare((const NeutronModelConfig *)&cfg->mcfg, &cfg->nmh);
     if (neutronRC != ENONE) {
-      ET_LOG(Error, "Neutron model preparation failed with error code %d", neutronRC);
+      ET_LOG(Error, "Neutron model preparation failed with error code %ld", neutronRC);
       return Error::InvalidProgram;
     }
 
@@ -104,7 +110,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);
     if (neutronRC != ENONE) {
-      ET_LOG(Error, "Neutron model evaluation failed with error code %d", neutronRC);
+      ET_LOG(Error, "Neutron model evaluation failed with error code %ld", neutronRC);
       return Error::InvalidProgram;
     }
 

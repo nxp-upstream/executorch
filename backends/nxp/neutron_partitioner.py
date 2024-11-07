@@ -48,8 +48,10 @@ NeutronSupportedOperatorsList = [
 
 class NeutronSupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        # check if the PyTorch op get called is supported for Neutron
-        # or if it is part of a QDQ cluster
+        """
+        Check if the PyTorch op that gets called is supported for Neutron
+        or if it is part of a QDQ cluster.
+        """
         return (
             node.op == "call_function" and node.target in NeutronSupportedOperatorsList
         ) or "cluster" in node.meta
@@ -74,13 +76,37 @@ class NeutronPartitioner(Partitioner):
         }
 
     def tag_clusters(self, nodes):
+        """
+        Identifies clusters of nodes that involve quantisation and dequantisation 
+        operations. It tags these nodes with a cluster name, which can be used
+        later for partitioning and optimising the graph.
+
+        Clustering is the process of grouping nodes in the computation graph that are related
+        to quantisation and dequantisation operations. This is useful for optimising the graph
+        for execution on specialized hardware.
+        """
         def get_dequant_inputs(node):
+            """
+            This function returns all the dequant operators which produce inputs to the node.
+            However, if the operator has 3 inputs and only one comes from dequant, the function
+            will return true and consequently the code condition `if dequant_inputs:` will be true.
+
+            This is done to handle the unexpected behavior of the NeutronQuantizer with the bias tensor (EIEX-66).
+            """
             return [
                 input_node for input_node in node.args
                 if isinstance(input_node, torch.fx.node.Node) and self.is_dequant_node(input_node)
             ]
 
         def get_quant_outputs(node):
+            """
+            Retrieve the quantised outputs of a given node.
+
+            This function examines the outputs of the provided node to identify
+            quantised nodes. It also checks if the output operation is a call to the
+            `operator.getitem` function and then inspects the operator's output to
+            find quantised nodes.
+            """
             quant_outputs = []
             for user in node.users:
                 if user.op == "call_function" and user.target == operator.getitem:
@@ -103,11 +129,10 @@ class NeutronPartitioner(Partitioner):
         for node in nodes:
             if node.op == "call_function":
                 dequant_inputs = get_dequant_inputs(node)
-                if dequant_inputs:
-                    quant_outputs = get_quant_outputs(node)
-                    if quant_outputs:
-                        cluster_name = f"{node.name}_cluster"
-                        tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs)
+                quant_outputs = get_quant_outputs(node)
+                if dequant_inputs and quant_outputs:
+                    cluster_name = f"{node.name}_cluster"
+                    tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible

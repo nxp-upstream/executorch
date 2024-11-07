@@ -44,16 +44,15 @@ NeutronSupportedOperatorsList = [
     # exir_ops.edge.aten.sub.Scalar,
     # exir_ops.edge.aten.tanh.default,
     # operator.getitem,
-
-    # QDQ ops
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
 ]
 
 class NeutronSupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # check if the PyTorch op get called is supported for Neutron
-        return node.op == "call_function" and node.target in NeutronSupportedOperatorsList
+        # or if it is part of a QDQ cluster
+        return (
+            node.op == "call_function" and node.target in NeutronSupportedOperatorsList
+        ) or "cluster" in node.meta
 
 @final
 class NeutronPartitioner(Partitioner):
@@ -93,6 +92,7 @@ class NeutronPartitioner(Partitioner):
             return quant_outputs
 
         def tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs):
+            # Tags a node and its related dequant and quant nodes with a specified cluster name
             logging.info(f"Tagging node {node} as {cluster_name}")
             node.meta["cluster"] = cluster_name
             for dequant_node in dequant_inputs:

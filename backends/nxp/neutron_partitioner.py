@@ -6,6 +6,7 @@
 # Partitioner for the NXP Neutron NPU
 
 import logging
+import operator
 from typing import final, List
 
 import torch
@@ -43,27 +44,108 @@ NeutronSupportedOperatorsList = [
     # exir_ops.edge.aten.sub.Scalar,
     # exir_ops.edge.aten.tanh.default,
     # operator.getitem,
-
-    # QDQ ops
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
 ]
 
 class NeutronSupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        # check if the PyTorch op get called is supported for Neutron
-        return node.op == "call_function" and node.target in NeutronSupportedOperatorsList
+        """
+        Check if the PyTorch op that gets called is supported for Neutron
+        or if it is part of a QDQ cluster.
+        """
+        return (
+            node.op == "call_function" and node.target in NeutronSupportedOperatorsList
+        ) or "cluster" in node.meta
 
 @final
 class NeutronPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
 
+    def is_quant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        }
+    
+    def is_dequant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        }
+
+    def tag_clusters(self, nodes):
+        """
+        Identifies clusters of nodes that involve quantisation and dequantisation 
+        operations. It tags these nodes with a cluster name, which can be used
+        later for partitioning and optimising the graph.
+
+        Clustering is the process of grouping nodes in the computation graph that are related
+        to quantisation and dequantisation operations. This is useful for optimising the graph
+        for execution on specialized hardware.
+        """
+        def get_dequant_inputs(node):
+            """
+            This function returns all the dequant operators which produce inputs to the node.
+            However, if the operator has 3 inputs and only one comes from dequant, the function
+            will return true and consequently the code condition `if dequant_inputs:` will be true.
+
+            This is done to handle the unexpected behavior of the NeutronQuantizer with the bias tensor (EIEX-66).
+            """
+            return [
+                input_node for input_node in node.args
+                if isinstance(input_node, torch.fx.node.Node) and self.is_dequant_node(input_node)
+            ]
+
+        def get_quant_outputs(node):
+            """
+            Retrieve the quantised outputs of a given node.
+
+            This function examines the outputs of the provided node to identify
+            quantised nodes. It also checks if the output operation is a call to the
+            `operator.getitem` function and then inspects the operator's output to
+            find quantised nodes.
+            """
+            quant_outputs = []
+            for user in node.users:
+                if user.op == "call_function" and user.target == operator.getitem:
+                    for grandchild in user.users:
+                        if self.is_quant_node(grandchild):
+                            quant_outputs.append(grandchild)
+                elif self.is_quant_node(user):
+                    quant_outputs.append(user)
+            return quant_outputs
+
+        def tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs):
+            # Tags a node and its related dequant and quant nodes with a specified cluster name
+            logging.info(f"Tagging node {node} as {cluster_name}")
+            node.meta["cluster"] = cluster_name
+            for dequant_node in dequant_inputs:
+                dequant_node.meta["cluster"] = cluster_name
+            for quant_node in quant_outputs:
+                quant_node.meta["cluster"] = cluster_name
+
+        for node in nodes:
+            if node.op == "call_function":
+                dequant_inputs = get_dequant_inputs(node)
+                quant_outputs = get_quant_outputs(node)
+                if dequant_inputs and quant_outputs:
+                    cluster_name = f"{node.name}_cluster"
+                    tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs)
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logging.info("NeutronPartitioner::partition")
         partition_tags = {}
+
+        graph_module = exported_program.graph_module
+        nodes = list(graph_module.graph.nodes)
+
+        self.tag_clusters(nodes)
+        
+        graph_module.recompile()
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,

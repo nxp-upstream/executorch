@@ -38,6 +38,8 @@ class EdgeProgramExecutor:
 
         if isinstance(output, torch.Tensor):
             return output.detach().numpy()
+        elif isinstance(output, tuple) and len(output) == 1:
+            return output[0].detach().numpy()
 
         raise RuntimeError("Edge program inference with multiple outputs not implemented")
 

@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import numpy as np
 from torch.fx import Node
 
-from executorch.backends.nxp.backend.ir.converter.conversion import translator, common
+from executorch.backends.nxp.backend.ir.converter.conversion import common
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input, OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.lib.tflite import Padding
+from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import conv_2d_options
 
@@ -23,9 +25,16 @@ class ConvolutionConverter(NodeConverter):
         weight_tensor = t_op.tmp_inputs[1]
 
         if (bias_tensor := try_get_input(t_op, 2)) is None:
-            # Operator has no bias. Convlution aten op can omit it, TFLite can't.
+            # Operator has no bias. Convolution aten op can omit it, TFLite can't.
             output_channels = weight_tensor.shape.vector[0]
-            bias_type = translator.tf_lite_type_to_numpy(weight_tensor.type)
+
+            if weight_tensor.type == TensorType.FLOAT32:
+                bias_type = np.dtype(np.float32)
+            elif weight_tensor.type in [TensorType.INT8, TensorType.UINT8]:
+                bias_type = np.dtype(np.int32)
+            else:
+                raise NotImplementedError(f"Convolution node with unsupported weight type: {weight_tensor.type}")
+
             bias_tensor = self.builder.create_zeros_tensor([output_channels], "zero_bias", bias_type, True)
 
         # Assign the operator its TFLite inputs and outputs
@@ -70,6 +79,6 @@ class ConvolutionConverter(NodeConverter):
         assert output_padding == [0, 0], "'output_padding' attribute not yet supported"
         assert groups == 1, "'groups' attribute not yet supported"
 
-        t_op = self._append_io_tensors_and_get_tflite_op(node)
+        t_op = self._create_tflite_op_with_io_tensors(node)
         ops_to_add = self._convert_2d_conv(stride, dilation, t_op)
-        self._append_operators(ops_to_add)
+        self.builder.append_operators(ops_to_add)

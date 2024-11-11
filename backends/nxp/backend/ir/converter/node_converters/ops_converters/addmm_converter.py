@@ -13,7 +13,7 @@ class AddMMConverter(NodeConverter):
     """ Convert the `aten.addmm` operator to TFLite `FullyConnected` with a bias input. """
 
     def convert(self, node: Node):
-        t_op = self._append_io_tensors_and_get_tflite_op(node)
+        t_op = self._create_tflite_op_with_io_tensors(node)
         t_op.builtin_options = fully_connected_options.FullyConnected(keep_num_dims=True)
 
         assert len(t_op.tmp_inputs) == 3, f'`aten.addmm` has an unexpected number of inputs ({len(t_op.tmp_inputs)}).'
@@ -35,4 +35,4 @@ class AddMMConverter(NodeConverter):
         assert w.rank == 2, f'`aten.addmm` has weights with rank `{w.rank}`, which is not supported.'
         ops.add_pre(self.builder.create_transpose_operator_before(t_op, 1, [1, 0]))
 
-        self._append_operators(ops.flatten())
+        self.builder.append_operators(ops.flatten())

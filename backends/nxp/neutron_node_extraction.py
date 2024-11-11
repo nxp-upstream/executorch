@@ -27,9 +27,6 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
         }
 
         The individual components must be aligned to 16 bytes.
-
-        ** Add the path to the `executorch/backends/nxp/backend/ir/lib` directory to your Python interpreter. **
-
     """
 
     if isinstance(tflite_flatbuffer_or_path, str):

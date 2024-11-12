@@ -81,7 +81,7 @@ class AddmmPattern(QuantizationPattern):
             dtype=torch.int32,
             quant_min=-(2**31),
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_tensor_symmetric, # FIXME: Updated to Neutron NPU
         )
 
         return PartitionAnchors(
@@ -113,7 +113,8 @@ class Conv1dPattern(QuantizationPattern):
             dtype=torch.int32,
             quant_min=-(2**31),
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_channel_symmetric, # FIXME: Updated to Neutron NPU
+            ch_axis=0, # FIXME: Updated to Neutron NPU
         )
 
         # Keep bias empty if not supplied
@@ -151,7 +152,8 @@ class Conv2dPattern(QuantizationPattern):
             dtype=torch.int32,
             quant_min=-(2**31),
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_channel_symmetric, # FIXME: Updated to Neutron NPU
+            ch_axis=0, # FIXME: Updated to Neutron NPU
         )
 
         # Keep bias empty if not supplied
@@ -243,7 +245,7 @@ class LinearPattern(QuantizationPattern):
             dtype=torch.int32,
             quant_min=-(2**31),
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_tensor_symmetric, # FIXME: Updated to Neutron NPU
         )
 
         # Keep bias empty if not supplied
@@ -281,7 +283,7 @@ class LinearFunctionalPattern(QuantizationPattern):
             dtype=torch.int32,
             quant_min=-(2**31),
             quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
+            qscheme=torch.per_tensor_symmetric, # FIXME: Updated to Neutron NPU
         )
 
         # Keep bias empty if not supplied

@@ -14,7 +14,6 @@ from typing import Iterator
 import torch
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
-from executorch.backends.arm.quantizer.arm_quantizer import get_symmetric_quantization_config
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -97,8 +96,7 @@ def post_training_quantize(model, calibration_inputs: tuple[torch.Tensor] | Iter
     logging.info("Quantizing model")
     logging.debug(f"Original model: {model}")
     quantizer = NeutronQuantizer()
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
-    quantizer.set_global(operator_config)
+
     m = prepare_pt2e(model, quantizer)
     # Calibration:
     logging.debug(f"Calibrating model")

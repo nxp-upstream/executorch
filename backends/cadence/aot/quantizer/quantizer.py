@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import List
 
 import torch
@@ -113,6 +114,11 @@ class CadenceGenericQuantizer(Quantizer):
             annotate_inputs(anchors.inputs, input_act_qspec)
             annotate_inputs(anchors.weights, weight_qspec)
             annotate_inputs(anchors.biases, bias_qspec)
+
+        logging.debug(f"- Annotations: {self.pattern.__class__.__name__} ------------------------------")
+        for node in model.graph.nodes:
+            logging.debug(f'node: {node}, {node.meta.get("quantization_annotation", None)}')
+        logging.debug("===============================================================================")
 
     def validate(self, model: fx.GraphModule) -> None:
         pass

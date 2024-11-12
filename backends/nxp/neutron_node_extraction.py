@@ -9,8 +9,8 @@ import struct
 
 import numpy as np
 
-from backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
-from backends.nxp.backend.ir.lib.tflite.Model import Model
+from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
+from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
 from executorch.exir.backend.backend_details import PreprocessResult
 
 

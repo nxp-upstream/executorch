@@ -10,12 +10,17 @@ from typing import List, Type
 
 import torch
 from torch import fx
+from torch.ao.quantization.quantizer import (
+    SharedQuantizationSpec,
+)
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver, PerChannelMinMaxObserver
 
 from executorch.backends.cadence.aot.quantizer.patterns import (
+    QuantizationPattern,
+    PartitionAnchors,
     AddmmPattern,
     Conv1dPattern,
     Conv2dPattern,
@@ -59,6 +64,41 @@ wgt_fc_qspec = QuantizationSpec(
 # Is set by the *PatternQuantizer directly.
 bias_qspec = None
 
+
+class MaxPoolPattern(QuantizationPattern):
+    """
+    Quantizer for MaxPool2D operator.
+
+    The quantization of maxpool is derived from the previous node quantization and the input and output shares the same
+    quantization parameters (scale and zero-point.
+    TODO (Robert): Essentially it is the same as executorch.backends.cadence.aot.quantizer.patterns.ReluPattern. There is an
+    option to unify the pattern matchers to ops sharing the Quantization spec.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.nn.MaxPool2d]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        node = fused_partition[0].nodes[-1]
+        assert len(fused_partition[0].input_nodes) == 1
+        prev_node = fused_partition[0].input_nodes[0]
+
+        qspec = SharedQuantizationSpec(prev_node)
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node, qspec), ],
+        )
+
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        assert False
+
+
 class NeutronQuantizer(ComposableQuantizer):
     def __init__(self):
         static_qconfig = QuantizationConfig(
@@ -79,6 +119,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceGenericQuantizer(Conv1dPattern(), static_qconfig),
                 CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
                 CadenceGenericQuantizer(LinearPattern(), static_fc_qconfig),
+                CadenceGenericQuantizer(MaxPoolPattern(), static_qconfig),
             ]
         )
 

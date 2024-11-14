@@ -17,7 +17,7 @@ def test_conv2d_neutron_conversion():
     edge_program_manager = exir.to_edge(exir_program)
 
     edge_program_converter = EdgeProgramToIRConverter()
-    tflite_model = edge_program_converter.convert_program(edge_program_manager.exported_program())
+    tflite_model, _ = edge_program_converter.convert_program(edge_program_manager.exported_program())
 
     neutron_converter_manager = NeutronConverterManager()
     neutron_model = neutron_converter_manager.convert(tflite_model)

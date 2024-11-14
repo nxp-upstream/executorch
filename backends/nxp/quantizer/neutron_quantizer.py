@@ -11,6 +11,7 @@ from typing import List, Type
 import torch
 from torch import fx
 from torch.ao.quantization.quantizer import (
+    FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,
 )
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
@@ -99,6 +100,43 @@ class MaxPoolPattern(QuantizationPattern):
         assert False
 
 
+class SoftMaxPattern(QuantizationPattern):
+    """
+    Quantizer for Softmax operator.
+
+    The quantization of Softmax output is fixed to scale 1/256, zero point -128, dtype int8.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.nn.Softmax]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        node = fused_partition[0].nodes[-1]
+        assert len(fused_partition[0].input_nodes) == 1
+
+        qspec = FixedQParamsQuantizationSpec(
+            dtype=torch.int8,
+            scale=1.0 / 256.0,
+            zero_point=-128,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node, qspec), ],
+        )
+
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        assert False
+
+
 class NeutronQuantizer(ComposableQuantizer):
     def __init__(self):
         static_qconfig = QuantizationConfig(
@@ -120,6 +158,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
                 CadenceGenericQuantizer(LinearPattern(), static_fc_qconfig),
                 CadenceGenericQuantizer(MaxPoolPattern(), static_qconfig),
+                CadenceGenericQuantizer(SoftMaxPattern(), static_qconfig),
             ]
         )
 

@@ -4,7 +4,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import MMConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import \
     PermuteCopyConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import \
+    SoftmaxConverter
 
 __all__ = [
-    AddMMConverter, ConvolutionConverter, MMConverter, PermuteCopyConverter
+    AddMMConverter, ConvolutionConverter, MMConverter, PermuteCopyConverter, SoftmaxConverter
 ]

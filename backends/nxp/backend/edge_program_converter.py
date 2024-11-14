@@ -14,10 +14,8 @@ import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import PermuteCopyConverter, \
-    AddMMConverter, MMConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import \
-    ConvolutionConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import ConvolutionConverter, \
+    PermuteCopyConverter, AddMMConverter, MMConverter, SoftmaxConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import \
     QDQDequantizeConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import \
@@ -94,6 +92,7 @@ class EdgeProgramToIRConverter:
             exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
             exir_ops.edge.aten.addmm.default: AddMMConverter,
             exir_ops.edge.aten.mm.default: MMConverter,
+            exir_ops.edge.aten._softmax.default: SoftmaxConverter,
         }
 
         ignored_functions = [

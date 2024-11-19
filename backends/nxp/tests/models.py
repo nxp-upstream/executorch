@@ -26,3 +26,12 @@ class SoftmaxModule(torch.nn.Module):
 
     def forward(self, x):
         return self.softmax(x)
+
+
+class LinearModule(torch.nn.Module):
+    def __init__(self, bias: bool):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 16, bias=bias)
+
+    def forward(self, x):
+        return self.linear(x)

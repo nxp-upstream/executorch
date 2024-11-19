@@ -8,14 +8,17 @@ from torch.fx import Node
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import \
-    ConvolutionConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import ConvolutionConverter, \
+    PermuteCopyConverter, AddMMConverter, MMConverter
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class CallFunctionConverter(NodeConverter):
     method_converters = {
-        exir_ops.edge.aten.convolution.default: ConvolutionConverter
+        exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+        exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
+        exir_ops.edge.aten.addmm.default: AddMMConverter,
+        exir_ops.edge.aten.mm.default: MMConverter
     }
 
     def convert(self, node: Node):

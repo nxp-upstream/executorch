@@ -14,7 +14,7 @@ class PermuteCopyConverter(NodeConverter):
 
     def convert(self, node: Node):
         """ Convert the `aten.permute_copy` operator to TFLite `Transpose`. """
-        t_op = self._append_io_tensors_and_get_tflite_op(node)
+        t_op = self._create_tflite_op_with_io_tensors(node)
         t_op.builtin_options = transpose_options.Transpose()
 
         output_tensor = t_op.tmp_outputs[0]
@@ -29,4 +29,4 @@ class PermuteCopyConverter(NodeConverter):
 
         ops_to_add = OpsList(middle_op=t_op)
 
-        self._append_operators(ops_to_add.flatten())
+        self.builder.append_operators(ops_to_add.flatten())

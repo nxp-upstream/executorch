@@ -5,31 +5,33 @@
 # LICENSE file in the root directory of this source tree.
 
 import flatbuffers
-from torch import Node
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
+from torch.fx import Node
 from torch.nn.parameter import Parameter
 
 import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
-from executorch.backends.nxp.backend.ir.converter.builder.model_builder import ModelBuilder
-from executorch.backends.nxp.backend.ir.converter.node_converters.call_function_converter import CallFunctionConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.output_converter import OutputConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.placeholder_converter import PlaceholderConverter
-from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
+from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import PermuteCopyConverter, \
+    AddMMConverter, MMConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.convolution_converter import \
+    ConvolutionConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import \
+    QDQDequantizeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import \
+    QDQQuantizeConverter
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
+from executorch.exir.dialects._ops import ops as exir_ops
+
 
 class EdgeProgramToIRConverter:
     """
     Converter from convertion of ExportedProgram in Edge dialect to IR (TFLite Flatbuffers).
     """
-    conversion_context: ConversionContext | None
 
-    def __init__(self):
-        self.conversion_context = None
-
-    def convert_program(self, edge_program: ExportedProgram, conversion_config = ConversionConfig()) -> bytes:
+    def convert_program(self, edge_program: ExportedProgram, conversion_config=ConversionConfig()) -> bytes:
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -43,8 +45,12 @@ class EdgeProgramToIRConverter:
         cc = self._build_conversion_context(parameters_mapping, node_formats, conversion_config)
 
         # Program conversion
+        self._append_placeholders_and_tensors(edge_program.graph.nodes, cc)
+        self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
-        self._assign_model_io_to_subgraph(edge_program.graph_signature, cc)
+
+        # Assign output
+        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
 
         # TFLite model generation
         internal_tflite_model = cc.tflite_builder.finish()
@@ -53,25 +59,56 @@ class EdgeProgramToIRConverter:
 
         return bytes(flatbuffers_builder.Output())
 
+    def _append_placeholders_and_tensors(self, nodes: list[Node], context: ConversionContext):
+        for node in nodes:
+            if node.op == "placeholder":
+                node_format = context.node_formats[node]
+
+                if node.name in context.parameters_mapping:
+                    # Node is placeholder and has data -> append as static tensor with data
+                    tensor = context.parameters_mapping[node.name]
+                    context.tflite_builder.append_as_static_tensor(node, node_format, tensor)
+                else:
+                    # Node is placeholder and doesn't have data (user input) -> append as fake tensor
+                    context.tflite_builder.append_as_fake_tensor(node, node_format)
+            elif node.op == "call_function":
+                # Node is call function -> append only output as a tensor
+                node_format = context.node_formats[node]
+                context.tflite_builder.append_as_fake_tensor(node, node_format)
+            elif node.op == "output":
+                # Nothing to do
+                pass
+            else:
+                logger.e(logger.Code.INTERNAL_ERROR, f"Unexpected node op type: '{node.op}'!")
+
+
     def _process_nodes(self, nodes: list[Node], conversion_context: ConversionContext):
         """
-        Go through program nodes and append their TFLite's sibling into ModelBuilder.
+        Go through program nodes and append their TFLite siblings into ModelBuilder.
 
         :param nodes: Program's nodes.
-        :param conversion_context: ConversionConxtext instance.
+        :param conversion_context: ConversionContext instance.
         """
-        node_converters = {
-            "placeholder": PlaceholderConverter,
-            "output": OutputConverter,
-            "call_function": CallFunctionConverter,
+        functions_converters = {
+            exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+            exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
+            exir_ops.edge.aten.addmm.default: AddMMConverter,
+            exir_ops.edge.aten.mm.default: MMConverter,
         }
 
+        ignored_functions = [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,  # Already processed
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default  # Already processed
+        ]
+
         for node in nodes:
-            if node.op not in node_converters:
-                logger.e(logger.Code.UNSUPPORTED_NODE, f"Node with op type '{node.op}' is not supported.")
-
-            node_converters[node.op](conversion_context).convert(node)
-
+            if node.op == "call_function":
+                if node.target in functions_converters:
+                    functions_converters[node.target](conversion_context).convert(node)
+                elif node.target in ignored_functions:
+                    pass
+                else:
+                    logger.e(logger.Code.NOT_IMPLEMENTED, f"Converter for '{node.target.__name__}' not implemented!")
 
     def _map_inputs_to_parameters(self, edge_program: ExportedProgram) -> dict[str, Parameter]:
         """
@@ -83,7 +120,7 @@ class EdgeProgramToIRConverter:
         result_map = {}
 
         for input_spec in edge_program.graph_signature.input_specs:
-            if input_spec.kind == InputKind.PARAMETER:
+            if input_spec.kind in [InputKind.PARAMETER, InputKind.BUFFER]:
                 result_map[input_spec.arg.name] = edge_program.state_dict[input_spec.target]
 
         return result_map
@@ -94,7 +131,7 @@ class EdgeProgramToIRConverter:
             node_formats: dict[Node, NodeFormat],
             conversion_config: ConversionConfig = ConversionConfig(),
     ) -> ConversionContext:
-        tflite_builder = ModelBuilder(3, "TFLite from EdgeProgram", conversion_config)
+        tflite_builder = AtenModelBuilderDirector(3, "TFLite from EdgeProgram", conversion_config)
 
         # Add "sentinel" buffer (defined in schema.fbs)
         tflite_builder.build_empty_buffer()
@@ -103,20 +140,20 @@ class EdgeProgramToIRConverter:
 
         return context
 
-    def _assign_model_io_to_subgraph(self, graph_signature, conversion_context):
+    def _convert_qdq_cluster_q_dq_nodes(self, nodes: list[Node], conversion_context: ConversionContext):
         """
-        Assign model's inputs/outputs to SubGraph.
+        Go through program and convert De(Quantize) nodes that are part of the QDQ cluster into
+        tensors.
 
-        :param graph_signature: Instance of GraphSignature.
-        :param conversion_context: Conversion context.
+        :param nodes: Program's nodes.
+        :param conversion_context: ConversionContext instance.
         """
-        model_builder = conversion_context.tflite_builder
-        model_builder.get_sub_graph().inputs = tflite_model.SubGraphInputs()
-        for input_name in graph_signature.user_inputs:
-            tensor = model_builder.tensor_for_name(input_name)
-            model_builder.get_sub_graph().inputs.tmp_inputs.append(tensor)
+        qdq_q_ops_converters = {
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQDequantizeConverter,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: QDQQuantizeConverter,
+        }
 
-        model_builder.get_sub_graph().outputs = tflite_model.SubGraphOutputs()
-        for output_name in graph_signature.user_outputs:
-            tensor = model_builder.tensor_for_name(output_name)
-            model_builder.get_sub_graph().outputs.tmp_outputs.append(tensor)
+        for node in nodes:
+            part_of_qdq_cluster = "cluster" in node.meta
+            if node.op == "call_function" and node.target in qdq_q_ops_converters and part_of_qdq_cluster:
+                qdq_q_ops_converters[node.target](conversion_context).convert(node)

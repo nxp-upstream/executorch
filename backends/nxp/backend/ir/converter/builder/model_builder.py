@@ -204,10 +204,10 @@ class ModelBuilder:
         self._skipped_output_map[from_tensor] = to_tensor
 
         # If 'from_tensor' was also the graph output, replace it there by 'to_tensor'.
-        graph_outputs = self.get_sub_graph().outputs.tmp_outputs
-        while from_tensor in graph_outputs:
-            first_index = graph_outputs.index(from_tensor)
-            graph_outputs[first_index] = to_tensor
+        # graph_outputs = self.get_sub_graph().outputs.tmp_outputs
+        # while from_tensor in graph_outputs:
+        #     first_index = graph_outputs.index(from_tensor)
+        #     graph_outputs[first_index] = to_tensor
 
         # Swap the names of the tensors to preserve the model IO interface.
         self.swap_tensor_names(from_tensor, to_tensor)

@@ -13,7 +13,7 @@ class MMConverter(NodeConverter):
 
     def convert(self, node: Node):
         """ Convert the `aten.mm` operator to TFLite `FullyConnected` without a bias input. """
-        t_op = self._append_io_tensors_and_get_tflite_op(node)
+        t_op = self._create_tflite_op_with_io_tensors(node)
         t_op.builtin_options = fully_connected_options.FullyConnected()
 
         assert len(t_op.tmp_inputs) == 2, f'`aten.mm` has an unexpected number of inputs ({len(t_op.tmp_inputs)}).'
@@ -34,4 +34,4 @@ class MMConverter(NodeConverter):
         assert w.rank == 2, f'`aten.mm` has weights with rank `{w.rank}`, which is not supported.'
         ops.add_pre(self.builder.create_transpose_operator_before(t_op, 1, [1, 0]))
 
-        self._append_operators(ops.flatten())
+        self.builder.append_operators(ops.flatten())

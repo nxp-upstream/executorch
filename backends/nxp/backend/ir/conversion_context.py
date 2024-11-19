@@ -8,17 +8,17 @@ from torch import Node
 from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.converter.builder.model_builder import ModelBuilder
+from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
 from executorch.backends.nxp.backend.node_format_inference import NodeFormat
 
 
 class ConversionContext:
-    tflite_builder: ModelBuilder
+    tflite_builder: AtenModelBuilderDirector
     conversion_config: ConversionConfig
     parameters_mapping: dict[str, Parameter]
     node_formats: dict[Node, NodeFormat]
 
-    def __init__(self, tflite_builder: ModelBuilder, conversion_config: ConversionConfig,
+    def __init__(self, tflite_builder: AtenModelBuilderDirector, conversion_config: ConversionConfig,
                  parameters_mapping: dict,
                  node_formats: dict[Node, NodeFormat], ):
         """

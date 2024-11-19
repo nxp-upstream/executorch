@@ -90,9 +90,13 @@ class AtenModelBuilderDirector(ModelBuilder):
         self.get_sub_graph().inputs = tflite_model.SubGraphInputs()
         for input_name in graph_signature.user_inputs:
             tensor = self.tensor_for_name(input_name)
+            assert input_name == tensor.name, ("Program's input name doesn't match with tensor name in TFLite. "
+                                               "Input was probably redirected.")
             self.get_sub_graph().inputs.tmp_inputs.append(tensor)
 
         self.get_sub_graph().outputs = tflite_model.SubGraphOutputs()
         for output_name in graph_signature.user_outputs:
             tensor = self.tensor_for_name(output_name)
+            assert output_name == tensor.name, ("Program's output name doesn't match with tensor name in TFLite. "
+                                               "Output was probably redirected.")
             self.get_sub_graph().outputs.tmp_outputs.append(tensor)

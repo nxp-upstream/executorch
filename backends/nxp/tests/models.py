@@ -18,6 +18,16 @@ class Conv2dModule(torch.nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+class Conv2dAndMaxPool2DModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(in_channels=8, out_channels=32, kernel_size=5, bias=True)
+        self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.maxpool(x)
 
 class SoftmaxModule(torch.nn.Module):
     def __init__(self, dim: int):

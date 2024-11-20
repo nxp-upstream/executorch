@@ -11,11 +11,16 @@
 import logging
 from typing import final, List, Optional
 
+from torch.export.exported_program import ExportedProgram
+
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
+from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
+from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch.export.exported_program import ExportedProgram
+
+
 class NeutronCompileSpecBuilder:
     def __init__(self):
         self.compile_spec: List[CompileSpec] = []
@@ -58,6 +63,7 @@ class NeutronCompileSpecBuilder:
 
         return self.compile_spec
 
+
 def generate_neutron_compile_spec(
     config: str,
     system_config: Optional[str] = None,
@@ -72,11 +78,12 @@ def generate_neutron_compile_spec(
         .build()
     )
 
+
 @final
 class NeutronBackend(BackendDetails):
 
     @staticmethod
-    def preprocess( 
+    def preprocess(
         edge_program: ExportedProgram,
         compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
@@ -103,6 +110,7 @@ class NeutronBackend(BackendDetails):
 
         # Serialize and return the program.
         if output_format == "tflite":
+            # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
             for tensor, tensor_format in io_formats.items():
                 if tensor_format == TensorFormat.CHANNELS_LAST:
@@ -112,8 +120,13 @@ class NeutronBackend(BackendDetails):
 
                 compile_spec.append(CompileSpec(tensor, channel_last_format))
 
-            logging.debug("Here we serialize to TFLite for the Neutron Convertor")
-            # TODO: Actually serialize to TFLite for Neutron Convertor
+            # Call the neutron converter with the TFLite model.
+            neutron_model = NeutronConverterManager().convert(tflite_model)
+
+            # Extract the Neutron microcode, weights and kernels from the Neutron Node in the `neutron_model`.
+            payload = extract_artifacts_from_neutron_node(neutron_model)
+            binary = payload.processed_bytes
+
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 

@@ -19,14 +19,25 @@ class Conv2dModule(torch.nn.Module):
 
 
 class SoftmaxModule(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim: int):
         super().__init__()
 
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=dim)
 
     def forward(self, x):
         return self.softmax(x)
 
+
+class SoftmaxConvModule(torch.nn.Module):
+    def __init__(self, dim: int):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.softmax = SoftmaxModule(dim=dim)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.softmax(x)
 
 class LinearModule(torch.nn.Module):
     def __init__(self, bias: bool):

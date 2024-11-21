@@ -5,9 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
-import torch
 from torch.fx import Node
 
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import torch_type_to_numpy_type
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
 
@@ -20,9 +20,11 @@ class QDQDequantizeConverter(NodeConverter):
         from_tensor = self.builder.tensor_for_name(node.name)
         to_tensor = self.builder.tensor_for_name(node.args[0].name)
 
-        assert node.args[5] == torch.int8, "Only INT8 conversion is currently supported"
+        zero_point_type = torch_type_to_numpy_type(node.args[5])
+        assert zero_point_type in [np.int8, np.int32], "Only INT8/INT32 conversion is currently supported"
+
         scale = np.array(node.args[1], dtype=np.float32)
-        zero_point = np.array(node.args[2], dtype=np.int8)
+        zero_point = np.array(node.args[2], dtype=zero_point_type)
 
         if self.context.parameters_mapping.get(node.args[0].name, None) is None:
             # Convert dequantize as identity op (Transpose that will be removed) because

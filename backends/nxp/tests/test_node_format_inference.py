@@ -32,7 +32,7 @@ def test_convolution():
         assert expected_mapping[node.name] == node_format
 
 def test_softmax():
-    model = SoftmaxModule()
+    model = SoftmaxModule(1)
     example_input = (torch.ones(1, 4, 32, 32),)
 
     exir_program = torch.export.export(model, example_input)

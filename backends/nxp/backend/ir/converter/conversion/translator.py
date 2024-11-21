@@ -702,6 +702,27 @@ def convert_data_type(torch_type: torch.TensorType) -> TensorType:
     else:
         logger.e(logger.Code.NOT_IMPLEMENTED, f"Conversion of Torch type '{torch_type}' not supported.")
 
+def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.ScalarType:
+    """ Convert Torch DataType to TFLite TensorType """
+
+    if torch_type == torch.float32:
+        return np.dtype(np.float32)
+
+    elif torch_type == torch.uint8:
+        return np.dtype(np.uint8)
+
+    elif torch_type == torch.int8:
+        return np.dtype(np.int8)
+
+    elif torch_type == torch.int32:
+        return np.dtype(np.int32)
+
+    elif torch_type == torch.int64:
+        return np.dtype(np.int64)
+
+    else:
+        logger.e(logger.Code.NOT_IMPLEMENTED, f"Conversion of Torch type '{torch_type}' not supported.")
+
 
 def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:
     """ Convert the numpy data type to a corresponding TFLite 'TensorType'.

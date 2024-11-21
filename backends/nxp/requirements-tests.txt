@@ -1,3 +1,4 @@
 tensorflow==2.16.2
 pytest-mock
 tflite
+GvGen

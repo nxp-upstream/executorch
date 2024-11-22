@@ -12,6 +12,7 @@ import logging
 from typing import final, List, Optional
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
+from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -102,7 +103,15 @@ class NeutronBackend(BackendDetails):
 
         # Serialize and return the program.
         if output_format == "tflite":
-            tflite_model = EdgeProgramToIRConverter().convert_program(edge_program)
+            tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
+            for tensor, tensor_format in io_formats.items():
+                if tensor_format == TensorFormat.CHANNELS_LAST:
+                    channel_last_format = b'1'
+                else:
+                    channel_last_format = b'0'
+
+                compile_spec.append(CompileSpec(tensor, channel_last_format))
+
             logging.debug("Here we serialize to TFLite for the Neutron Convertor")
             # TODO: Actually serialize to TFLite for Neutron Convertor
         else:

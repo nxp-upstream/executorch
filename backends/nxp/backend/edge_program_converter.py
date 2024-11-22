@@ -29,7 +29,7 @@ class EdgeProgramToIRConverter:
     Converter from convertion of ExportedProgram in Edge dialect to IR (TFLite Flatbuffers).
     """
 
-    def convert_program(self, edge_program: ExportedProgram, conversion_config=ConversionConfig()) -> bytes:
+    def convert_program(self, edge_program: ExportedProgram, conversion_config=ConversionConfig()) -> (bytes, dict):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
@@ -48,14 +48,14 @@ class EdgeProgramToIRConverter:
         self._process_nodes(edge_program.graph.nodes, cc)
 
         # Assign output
-        cc.tflite_builder.assign_model_io_to_subgraph(edge_program.graph_signature)
+        io_formats = cc.tflite_builder.assign_model_io_to_subgraph_and_get_io_formats(edge_program.graph_signature)
 
         # TFLite model generation
         internal_tflite_model = cc.tflite_builder.finish()
         flatbuffers_builder = flatbuffers.Builder()
         internal_tflite_model.gen_tflite(flatbuffers_builder)
 
-        return bytes(flatbuffers_builder.Output())
+        return bytes(flatbuffers_builder.Output()), io_formats
 
     def _append_placeholders_and_tensors(self, nodes: list[Node], context: ConversionContext):
         for node in nodes:
@@ -79,7 +79,6 @@ class EdgeProgramToIRConverter:
             else:
                 logger.e(logger.Code.INTERNAL_ERROR, f"Unexpected node op type: '{node.op}'!")
 
-
     def _process_nodes(self, nodes: list[Node], conversion_context: ConversionContext):
         """
         Go through program nodes and append their TFLite siblings into ModelBuilder.
@@ -95,17 +94,18 @@ class EdgeProgramToIRConverter:
             exir_ops.edge.aten._softmax.default: SoftmaxConverter,
         }
 
-        ignored_functions = [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,  # Already processed
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default  # Already processed
+        qdq_related_functions = [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
         ]
 
         for node in nodes:
             if node.op == "call_function":
-                if node.target in functions_converters:
-                    functions_converters[node.target](conversion_context).convert(node)
-                elif node.target in ignored_functions:
+                if node.target in qdq_related_functions and "cluster" in node.meta:
+                    # Skip (De)Quantize nodes that were already processed
                     pass
+                elif node.target in functions_converters:
+                    functions_converters[node.target](conversion_context).convert(node)
                 else:
                     logger.e(logger.Code.NOT_IMPLEMENTED, f"Converter for '{node.target.__name__}' not implemented!")
 

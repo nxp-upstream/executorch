@@ -81,18 +81,22 @@ class AtenModelBuilderDirector(ModelBuilder):
 
             self.check_and_append_operator(op)
 
-    def assign_model_io_to_subgraph(self, graph_signature):
+    def assign_model_io_to_subgraph_and_get_io_formats(self, graph_signature) -> dict[str, TensorFormat]:
         """
         Assign model's inputs/outputs to SubGraph.
 
         :param graph_signature: Instance of GraphSignature.
+        :returns: Mapping between IO tensors' names and their formats.
         """
+        io_formats = {}
+
         self.get_sub_graph().inputs = tflite_model.SubGraphInputs()
         for input_name in graph_signature.user_inputs:
             tensor = self.tensor_for_name(input_name)
             assert input_name == tensor.name, ("Program's input name doesn't match with tensor name in TFLite. "
                                                "Input was probably redirected.")
             self.get_sub_graph().inputs.tmp_inputs.append(tensor)
+            io_formats[tensor.name] = tensor.tensor_format
 
         self.get_sub_graph().outputs = tflite_model.SubGraphOutputs()
         for output_name in graph_signature.user_outputs:
@@ -100,3 +104,7 @@ class AtenModelBuilderDirector(ModelBuilder):
             assert output_name == tensor.name, ("Program's output name doesn't match with tensor name in TFLite. "
                                                "Output was probably redirected.")
             self.get_sub_graph().outputs.tmp_outputs.append(tensor)
+
+            io_formats[tensor.name] = tensor.tensor_format
+
+        return io_formats

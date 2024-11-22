@@ -148,21 +148,43 @@ def compare_output_arrays(tfl_output: np.ndarray, edge_output: np.ndarray, outpu
                        equal_nan=True), f"Output values of the `{output_name}` tensor don't match!"
 
 
+class TFLiteIOPreprocess:
 
-def convert_run_compare(edge_program: ExportedProgram, input_data, check_model=True, rtol=1.e-5, atol=1.e-8,
-                        save_models=False, input_data_tflite=None,
+    def preprocess(self, data: np.ndarray):
+        return data
+
+
+class ToNCHWPreprocess(TFLiteIOPreprocess):
+
+    def preprocess(self, data: np.ndarray):
+        assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"
+        return np.transpose(data, [0, 2, 3, 1])
+
+class ToNHWCPreprocess(TFLiteIOPreprocess):
+
+    def preprocess(self, data: np.ndarray):
+        assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"
+        return np.transpose(data, [0, 3, 1, 2])
+
+
+
+def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, atol=1.e-8,
+                        save_models=False,
+                        tflite_input_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
+                        tflite_output_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
                         conversion_config: ConversionConfig = ConversionConfig(),
                         tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO) -> (TFLiteExecutor, EdgeProgramExecutor):
 
-    tfl_model = EdgeProgramToIRConverter().convert_program(edge_program, conversion_config)
+    tfl_model, _ = EdgeProgramToIRConverter().convert_program(edge_program, conversion_config)
 
     edge_program_executor = EdgeProgramExecutor(edge_program)
     edge_program_output = edge_program_executor.inference(input_data)
 
-    tflite_input_data = input_data if input_data_tflite is None else input_data_tflite
+    tflite_input_data = tflite_input_preprocess.preprocess(input_data)
     tflite_executor = TFLiteExecutor(model_content=tfl_model, save_model=save_models,
                                      op_resolver_type=tflite_op_resolver_type)
     tflite_output = tflite_executor.inference(tflite_input_data)
+    tflite_output = tflite_output_preprocess.preprocess(tflite_output)
 
     if isinstance(tflite_output, dict) and isinstance(edge_program_output, dict):
         if len(set(tflite_output.keys()).symmetric_difference(set(edge_program_output.keys()))) == 0:

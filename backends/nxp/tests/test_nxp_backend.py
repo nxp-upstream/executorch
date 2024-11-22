@@ -75,27 +75,28 @@ def test_conv2d__lowered_program_and_tflite_output_match(mocker):
     _ = to_lowered_edge_program_manager(model, input_shape)
 
     # Capture generated model
-    tflite_flatbuffers_model = converter_spy.spy_return
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
 
     tflite_model = Model.GetRootAs(tflite_flatbuffers_model)
     sub_graph = tflite_model.Subgraphs(0)
 
-    assert sub_graph.OperatorsLength() == 3
-    assert sub_graph.Operators(0).BuiltinOptionsType() == BuiltinOptions.TransposeOptions
-    assert sub_graph.Operators(1).BuiltinOptionsType() == BuiltinOptions.Conv2DOptions
-    assert sub_graph.Operators(2).BuiltinOptionsType() == BuiltinOptions.TransposeOptions
+    assert sub_graph.OperatorsLength() == 1
+    assert sub_graph.Operators(0).BuiltinOptionsType() == BuiltinOptions.Conv2DOptions
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     input_data = (torch.randn(input_shape, dtype=torch.float32) * 50).type(torch.int8).detach().numpy()
+    input_data_tflite = np.transpose(input_data, [0, 2, 3, 1])
 
     # Execute program and TFLite model
     program_executor = EdgeProgramExecutor(exported_program)
     tflite_executor = TFLiteExecutor(model_content=tflite_flatbuffers_model)
 
     output_edge = program_executor.inference(input_data)
-    output_tflite = tflite_executor.inference(input_data)
+    output_tflite = tflite_executor.inference(input_data_tflite)
+
+    output_tflite = np.transpose(output_tflite, [0, 3, 1, 2])
 
     # Outputs difference is smaller than 1 (rounding error in quantization)
     assert np.max(np.abs(output_edge - output_tflite)) <= 1

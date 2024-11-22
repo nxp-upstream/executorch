@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from collections import abc
 from enum import Enum
 
 from torch import Node
@@ -180,7 +181,9 @@ class NodeFormatInference:
         node_value_meta = node.meta["val"]
 
         # (TODO Lukas): Some nodes contains multiple value metadata (MaxPool, ...). Find out why.
-        if isinstance(node_value_meta, Tuple):
+        if isinstance(node_value_meta, tuple):
+            node_value_meta = node_value_meta[0]
+        elif isinstance(node_value_meta, list):
             node_value_meta = node_value_meta[0]
 
         node_output_rank = len(node_value_meta.shape)

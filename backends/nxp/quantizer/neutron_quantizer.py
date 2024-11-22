@@ -43,9 +43,9 @@ wgt_qspec = QuantizationSpec(
     dtype=torch.int8,
     quant_min=-128,
     quant_max=127,
-    qscheme=torch.per_channel_symmetric,
+    qscheme=torch.per_tensor_symmetric,
     is_dynamic=False,
-    observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+    observer_or_fake_quant_ctr=MinMaxObserver,
     ch_axis=0
 )
 

@@ -28,14 +28,14 @@ def test_quantizer_conv2d():
     # print(f"Quantized model: {m}")
     nodes = list(m.graph.nodes)
 
-    assert len(nodes) == 15
-    assert nodes[11].name == "conv2d"
+    assert len(nodes) == 11
+    assert nodes[7].name == "conv2d"
     # [0]: Input, [1] : weights, [2]: bias
-    assert _get_target_name(nodes[11].args[0]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
-    assert _get_target_name(nodes[11].args[1]) == 'torch.ops.quantized_decomposed.dequantize_per_channel.default'
-    assert _get_target_name(nodes[11].args[2]) == 'torch.ops.quantized_decomposed.dequantize_per_channel.default'
-    assert _get_target_name(nodes[12]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
-    assert nodes[12].args[0].name == "conv2d"
+    assert _get_target_name(nodes[7].args[0]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
+    assert _get_target_name(nodes[7].args[1]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
+    assert _get_target_name(nodes[7].args[2]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
+    assert _get_target_name(nodes[8]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
+    assert nodes[8].args[0].name == "conv2d"
 
 def test_quantizer_linear():
     model = models.LinearModule(bias=True)
@@ -74,16 +74,16 @@ def test_quantizer_maxpool2d():
     # print(f"Quantized model: {m}")
     nodes = list(m.graph.nodes)
 
-    assert len(nodes) == 18
+    assert len(nodes) == 14
     # Check if QDQ pattern:
-    assert nodes[14].name == "max_pool2d"
-    assert _get_target_name(nodes[14].args[0]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
-    assert _get_target_name(nodes[15]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
-    assert nodes[15].args[0].name == "max_pool2d"
+    assert nodes[10].name == "max_pool2d"
+    assert _get_target_name(nodes[10].args[0]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
+    assert _get_target_name(nodes[11]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
+    assert nodes[11].args[0].name == "max_pool2d"
 
     # Check if input and output quantization is same
-    input_quant = nodes[14].args[0].args[1:]
-    output_quant = nodes[15].args[1:]
+    input_quant = nodes[10].args[0].args[1:]
+    output_quant = nodes[11].args[1:]
     assert input_quant == output_quant
 
 def test_quantizer_softmax():

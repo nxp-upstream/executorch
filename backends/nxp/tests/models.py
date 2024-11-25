@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Collection
+
 import torch
 
 
@@ -58,3 +60,27 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class ConstantPadNDModule(torch.nn.Module):
+    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+        super().__init__()
+        self.paddings = paddings
+        self.constant = constant
+
+    def forward(self, x):
+        if self.constant is None:
+            return torch.nn.functional.pad(x, tuple(self.paddings), 'constant')
+        else:
+            return torch.nn.functional.pad(x, tuple(self.paddings), 'constant', self.constant)
+
+
+class ConstantPadNDConvModule(torch.nn.Module):
+    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+        super().__init__()
+        self.pad = ConstantPadNDModule(paddings, constant)
+        self.conv = Conv2dModule()
+
+    def forward(self, x):
+        x = self.pad(x)
+        return self.conv(x)

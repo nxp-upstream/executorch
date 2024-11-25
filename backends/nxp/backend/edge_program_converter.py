@@ -15,10 +15,7 @@ from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfi
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import ConvolutionConverter, \
-    PermuteCopyConverter, AddMMConverter, MMConverter, SoftmaxConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import \
-    QDQDequantizeConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import \
+    PermuteCopyConverter, AddMMConverter, MMConverter, SoftmaxConverter, ConstantPadNDConverter, QDQDequantizeConverter, \
     QDQQuantizeConverter
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -86,12 +83,14 @@ class EdgeProgramToIRConverter:
         :param nodes: Program's nodes.
         :param conversion_context: ConversionContext instance.
         """
+        # noinspection PyProtectedMember
         functions_converters = {
             exir_ops.edge.aten.convolution.default: ConvolutionConverter,
             exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
             exir_ops.edge.aten.addmm.default: AddMMConverter,
             exir_ops.edge.aten.mm.default: MMConverter,
             exir_ops.edge.aten._softmax.default: SoftmaxConverter,
+            exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter
         }
 
         qdq_related_functions = [
@@ -125,10 +124,10 @@ class EdgeProgramToIRConverter:
         return result_map
 
     def _build_conversion_context(
-            self,
-            parameters_mapping: dict,
-            node_formats: dict[Node, NodeFormat],
-            conversion_config: ConversionConfig = ConversionConfig(),
+        self,
+        parameters_mapping: dict,
+        node_formats: dict[Node, NodeFormat],
+        conversion_config: ConversionConfig = ConversionConfig(),
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(3, "TFLite from EdgeProgram", conversion_config)
 

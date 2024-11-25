@@ -8,6 +8,7 @@
 import argparse
 import io
 import logging
+from collections import defaultdict
 from typing import Iterator
 
 import torch
@@ -26,6 +27,32 @@ from executorch.exir import ExecutorchBackendConfig
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+
+def print_ops_in_edge_program(edge_program):
+    """ Find all ops used in the `edge_program` and print them out along with their occurrence counts. """
+
+    ops_and_counts = defaultdict(lambda: 0)  # Mapping ops to the numer of times they are used.
+    for node in edge_program.graph.nodes:
+        if 'call' not in node.op:
+            continue  # `placeholder` or `output`. (not an operator)
+
+        if hasattr(node.target, '_schema'):
+            # Regular op.
+            # noinspection PyProtectedMember
+            op = node.target._schema.schema.name
+        else:
+            # Builtin function.
+            op = str(node.target)
+
+        ops_and_counts[op] += 1
+
+    # Sort the ops based on how many times they are used in the model.
+    ops_and_counts = sorted(ops_and_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # Print the ops and use counts.
+    for op, count in ops_and_counts:
+        print(f'{op: <50} {count}x')
 
 
 def get_model_and_inputs_from_name(model_name: str):

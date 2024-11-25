@@ -14,9 +14,7 @@ import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import ConvolutionConverter, \
-    PermuteCopyConverter, AddMMConverter, MMConverter, SoftmaxConverter, ConstantPadNDConverter, QDQDequantizeConverter, \
-    QDQQuantizeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -90,6 +88,7 @@ class EdgeProgramToIRConverter:
             exir_ops.edge.aten.addmm.default: AddMMConverter,
             exir_ops.edge.aten.mm.default: MMConverter,
             exir_ops.edge.aten._softmax.default: SoftmaxConverter,
+            exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
             exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter
         }
 

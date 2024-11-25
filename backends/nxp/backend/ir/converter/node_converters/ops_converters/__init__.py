@@ -12,8 +12,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     QDQQuantizeConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import \
     SoftmaxConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import \
+    ViewCopyConverter
 
 __all__ = [
-    AddMMConverter, ConvolutionConverter, MMConverter, PermuteCopyConverter, SoftmaxConverter, ConstantPadNDConverter,
-    QDQDequantizeConverter, QDQQuantizeConverter
+    "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
+    "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter"
 ]

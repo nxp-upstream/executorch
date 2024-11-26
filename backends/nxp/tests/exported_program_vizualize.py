@@ -61,7 +61,16 @@ def exported_program_to_dot(exported_program: ExportedProgram):
     # Add connections between nodes
     for node in exported_program.graph.nodes:
         for user in node.users:
-            graph.newLink(graph_items[node.name], graph_items[user.name])
+            link = graph.newLink(graph_items[node.name], graph_items[user.name])
+
+            label = ""
+            if "val" in node.meta:
+                tensor = node.meta["val"]
+                if isinstance(tensor, tuple):
+                    tensor = tensor[0]  # Fake tensor
+                label = f"  ({list(tensor.shape)} | {tensor.dtype})"
+
+            graph.propertyAppend(link, "label", label)
 
     with open("graph.dot", "w") as f:
         graph.dot(f)

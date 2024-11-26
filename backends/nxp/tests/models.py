@@ -10,11 +10,18 @@ import torch
 
 
 class Conv2dModule(torch.nn.Module):
-    def __init__(self, bias: bool = True):
+    def __init__(self, bias: bool = True,
+                 dilation: int = 1,
+                 in_channels: int = 4,
+                 kernel_size: int = 3,
+                 out_channels: int = 8,
+                 stride: int = 2,
+    ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
-            in_channels=4, out_channels=8, kernel_size=3, bias=bias, stride=2, dilation=1
+            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+            bias=bias, stride=stride, dilation=dilation
         )
 
     def forward(self, x):

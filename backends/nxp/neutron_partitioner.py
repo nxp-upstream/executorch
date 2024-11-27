@@ -52,9 +52,14 @@ class NeutronSupportedOperators(OperatorSupportBase):
         Check if the PyTorch op that gets called is supported for Neutron
         or if it is part of a QDQ cluster.
         """
-        return (
-            node.op == "call_function" and node.target in NeutronSupportedOperatorsList
-        ) or "cluster" in node.meta
+        is_neutron_supported_op = node.op == "call_function" and node.target in NeutronSupportedOperatorsList
+        is_part_of_the_cluster = "cluster" in node.meta
+
+        # TODO(Lukas) Naive approach. This will be replaced by 'getitem' recognition in QDQ clustering
+        is_maxpool_getitem = (node.name.startswith("getitem") and
+                              node.all_input_nodes[0].target == exir_ops.edge.aten.max_pool2d_with_indices.default)
+
+        return is_neutron_supported_op or is_part_of_the_cluster or is_maxpool_getitem
 
 @final
 class NeutronPartitioner(Partitioner):

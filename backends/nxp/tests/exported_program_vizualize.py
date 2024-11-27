@@ -4,11 +4,13 @@ from gvgen import GvGen
 from torch.export import ExportedProgram
 
 
-def exported_program_to_dot(exported_program: ExportedProgram):
+def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="graph.dot", show_tags=True):
     """
     Generate dot file for tagged exported program.
 
     :param exported_program: Exported program with optional meta values: 'delegation_tag' and 'cluster'.
+    :param dot_file_name: Produced .dot file name.
+    :param show_tags: If True, nodes will be shown as a subcomponent of tag nodes.
     """
     graph = GvGen()
 
@@ -27,14 +29,14 @@ def exported_program_to_dot(exported_program: ExportedProgram):
 
     # Find tags (parent objects)
     for node in exported_program.graph.nodes:
-        if "delegation_tag" in node.meta:
+        if "delegation_tag" in node.meta and show_tags:
             tag = node.meta["delegation_tag"]
             if tag not in delegation_tags:
                 item = graph.newItem(tag)
                 delegation_tags[tag] = item
 
     for node in exported_program.graph.nodes:
-        if "delegation_tag" in node.meta:
+        if "delegation_tag" in node.meta and show_tags:
             # Delegated node -> add color
             tag = node.meta["delegation_tag"]
             item = graph.newItem(node.name, delegation_tags[tag])
@@ -72,5 +74,5 @@ def exported_program_to_dot(exported_program: ExportedProgram):
 
             graph.propertyAppend(link, "label", label)
 
-    with open("graph.dot", "w") as f:
+    with open(dot_file_name, "w") as f:
         graph.dot(f)

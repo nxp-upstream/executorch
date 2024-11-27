@@ -13,12 +13,19 @@ from typing import final, List, Optional
 
 from torch.export.exported_program import ExportedProgram
 
+import torch
+
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
 from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node
+from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+
+from torch.export.exported_program import ExportedProgram
+from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 
 class NeutronCompileSpecBuilder:
@@ -110,6 +117,16 @@ class NeutronBackend(BackendDetails):
 
         # Serialize and return the program.
         if output_format == "tflite":
+            # We need to create custom model verifier with max_pool2d added as exception.
+            # Otherwise, we get violation that this op is not part of ATen Core ops.
+            edge_program._verifier = EXIREdgeDialectVerifier(
+                class_only=True,
+                exception_list=[torch.ops.aten.max_pool2d.default]
+            )
+
+            # Remove MaxPool-related "getitem" nodes from graph
+            edge_program = XNNPACKPassManager(edge_program, [RemoveGetItemPass]).transform()
+
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
             for tensor, tensor_format in io_formats.items():

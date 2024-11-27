@@ -154,13 +154,13 @@ class TFLiteIOPreprocess:
         return data
 
 
-class ToNCHWPreprocess(TFLiteIOPreprocess):
+class ToNHWCPreprocess(TFLiteIOPreprocess):
 
     def preprocess(self, data: np.ndarray):
         assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"
         return np.transpose(data, [0, 2, 3, 1])
 
-class ToNHWCPreprocess(TFLiteIOPreprocess):
+class ToNCHWPreprocess(TFLiteIOPreprocess):
 
     def preprocess(self, data: np.ndarray):
         assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"

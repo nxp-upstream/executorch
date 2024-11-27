@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from executorch import exir
-from executorch.backends.nxp.tests.executors import convert_run_compare
+from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWPreprocess, ToNHWCPreprocess
 from executorch.backends.nxp.tests.models import SoftmaxModule, SoftmaxConvModule
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
@@ -46,7 +46,8 @@ def test_softmax_conversion_channel_last(input_shape, dim):
     torch.manual_seed(23)
     input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
 
-    convert_run_compare(edge_program_manager.exported_program(), input_data=input_data, atol=5e-7)
+    convert_run_compare(edge_program_manager.exported_program(), tflite_input_preprocess=ToNHWCPreprocess(),
+                        tflite_output_preprocess=ToNCHWPreprocess(), input_data=input_data, atol=5e-7)
 
 
 @pytest.mark.parametrize("input_shape,dim", [

@@ -7,7 +7,9 @@ from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOptions import Builtin
 from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
-from executorch.backends.nxp.tests.executors import TFLiteExecutor, EdgeProgramExecutor
+from executorch.backends.nxp.tests.executors import TFLiteExecutor, EdgeProgramExecutor, convert_run_compare, \
+    ToNHWCPreprocess
+from executorch.backends.nxp.tests.models import ConvFCSoftmaxModule
 from executorch.examples.nxp.aot_neutron_compile import post_training_quantize
 from executorch.examples.portable import export_to_edge
 
@@ -100,3 +102,32 @@ def test_conv2d__lowered_program_and_tflite_output_match(mocker):
 
     # Outputs difference is smaller than 1 (rounding error in quantization)
     assert np.max(np.abs(output_edge - output_tflite)) <= 1
+
+
+def test_conv_fc_softmax__lowered_program_and_tflite_output_match(mocker):
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    model = ConvFCSoftmaxModule()
+    input_shape = (1, 4, 5, 5)
+
+    # Run conversion
+    _ = to_lowered_edge_program_manager(model, input_shape)
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    # Capture generated model
+    tflite_flatbuffers_model, _ = converter_spy.spy_return
+
+    # No Transpose ops in produced TFLite model
+    tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
+
+    assert tflite_subgraph.OperatorsLength() == 4
+    assert tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.Conv2DOptions
+    assert tflite_subgraph.Operators(1).BuiltinOptionsType() == BuiltinOptions.ReshapeOptions
+    assert tflite_subgraph.Operators(2).BuiltinOptionsType() == BuiltinOptions.FullyConnectedOptions
+    assert tflite_subgraph.Operators(3).BuiltinOptionsType() == BuiltinOptions.SoftmaxOptions
+
+    # Verify outputs of program and TFLite model
+    input_data = (torch.randn(input_shape, dtype=torch.float32)).type(torch.int8).detach().numpy()
+    convert_run_compare(exported_program, input_data=input_data, tflite_input_preprocess=ToNHWCPreprocess())

@@ -75,8 +75,13 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Allocate place for input and output pointers.
     cfg->dcfg.inputs = static_cast<const void**>(allocator->allocate(cfg->numInputs * sizeof(void*)));
     cfg->dcfg.outputs = static_cast<void**>(allocator->allocate(cfg->numOutputs * sizeof(void*)));
-    // Allocate place for NeutronModelHandle
+#if (NO_HEAP_USAGE == 0)
+    // The driver allocates and deallocates place for NeutronModelHandle.
+    cfg->nmh = NULL;
+#else
+    // Allocate place for NeutronModelHandle.
     cfg->nmh = static_cast<NeutronModelHandle>(allocator->allocate(neutronGetModelContextSize()));
+#endif
     
     // Prepare data for through neutron driver.
     NeutronError neutronRC = neutronModelPrepare((const NeutronModelConfig *)&cfg->mcfg, &cfg->nmh);

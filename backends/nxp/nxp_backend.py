@@ -88,6 +88,9 @@ def generate_neutron_compile_spec(
 
 @final
 class NeutronBackend(BackendDetails):
+    # Counter how many times the preprocess function is called.
+    # Works only when debugging is allowed
+    counter = 0
 
     @staticmethod
     def preprocess(
@@ -139,6 +142,16 @@ class NeutronBackend(BackendDetails):
 
             # Call the neutron converter with the TFLite model.
             neutron_model = NeutronConverterManager().convert(tflite_model)
+
+            # Dump the tflite file if logging level is enabled
+            if logging.root.isEnabledFor(logging.DEBUG):
+                import os
+                logging.debug(f"Serializing converted graph number {NeutronBackend.counter} to {os.getcwd()}")
+                with open(f"{str(NeutronBackend.counter)}_pure.et.tflite", "wb") as f:
+                    f.write(bytes(tflite_model))
+                with open(f"{str(NeutronBackend.counter)}_neutron.et.tflite", "wb") as f:
+                    f.write(bytes(neutron_model))
+                NeutronBackend.counter = NeutronBackend.counter + 1
 
             # Extract the Neutron microcode, weights and kernels from the Neutron Node in the `neutron_model`.
             payload = extract_artifacts_from_neutron_node(neutron_model)

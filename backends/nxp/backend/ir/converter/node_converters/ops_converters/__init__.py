@@ -14,8 +14,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     SoftmaxConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import \
     ViewCopyConverter
-
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.maxpool_2d_converter import \
+    Maxpool2dConverter
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
-    "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter"
+    "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "Maxpool2dConverter"
 ]
+

@@ -89,7 +89,8 @@ class EdgeProgramToIRConverter:
             exir_ops.edge.aten.mm.default: MMConverter,
             exir_ops.edge.aten._softmax.default: SoftmaxConverter,
             exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
-            exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter
+            exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+            exir_ops.edge.aten.max_pool2d.default: Maxpool2dConverter
         }
 
         qdq_related_functions = [

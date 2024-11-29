@@ -110,3 +110,14 @@ class ConstantPadNDConvModule(torch.nn.Module):
     def forward(self, x):
         x = self.pad(x)
         return self.conv(x)
+
+class Maxpool2dModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.maxpool2d = torch.nn.MaxPool2d(
+            kernel_size=3, stride=2, dilation=1
+        )
+
+    def forward(self, x):
+        return self.maxpool2d(x)

@@ -5,12 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from collections import abc
 from enum import Enum
 
 from torch import Node
 from torch.export import ExportedProgram
-from typing_extensions import Tuple
 
 # (TODO Lukas) Can we found ops somewhere else?
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -43,7 +41,7 @@ class NodeFormatInference:
     # A set of Edge Aten ops, which have the ability to change the format (for example - input nodes
     # are channels first but output is formatless).
     ops_that_can_change_tensor_format = {
-        # TODO ("transpose", "reshape", etc.)
+        exir_ops.edge.aten.view_copy.default
     }
 
     _node_format_mapping: dict[Node, NodeFormat]
@@ -84,12 +82,54 @@ class NodeFormatInference:
         if op_type in self.ops_with_channels_first_nodes:
             self._handle_node_which_uses_channels_first_format(node)
         elif op_type in self.ops_that_can_change_tensor_format:
-            if op_type in ["transpose"]:
-                self._assign_format_to_node(node, NodeFormat.FORMATLESS)
+            if op_type == exir_ops.edge.aten.view_copy.default:  # view_copy
+                self._assign_format_to_node(self._node_outputs[node][0], NodeFormat.FORMATLESS)
             else:
                 logger.error(f"Node format inference for node type: {op_type} not found!")
         else:
             self._handle_node_which_can_use_any_node_format(node)
+
+    def _infer_format_based_on_io_ranks(self, node: Node):
+        """ Determine the format of the output tensor of given "reshape style operator" based on the ranks of its input
+             and output.
+        """
+        # noinspection PyBroadException
+        try:
+            main_input_rank = len(node.all_input_nodes[0].meta['val'].shape)
+            main_output_rank = len(node.meta['val'].shape)
+
+            if main_output_rank == main_input_rank:
+                # Operator maintains the number of dimensions -> try to propagate the format.
+                self._match_formats_of_nodes(node, node.prev)
+
+            else:
+                # Either the op 'flattens' the tensor, so output is formatless, or it scales it up, in which case the
+                # format is assumed to be 'FORMATLESS', and may be back propagated as channels first later.
+                self._assign_format_to_node(node, NodeFormat.FORMATLESS)
+
+        except:
+            # Some shape data is not known, so we cannot be extra clever. Just set the output to `FORMATLESS` and
+            #  everything will be alright.
+            self._assign_format_to_node(node, NodeFormat.FORMATLESS)
+
+    def _match_formats_of_nodes(self, node_1, node_2):
+        """ If one of 'node_1' or 'node_2' is channels first, make the other channels first as well.
+             If neither is channels first, make them both formatless.
+        """
+
+        format_1 = self._get_node_format(node_1)
+        format_2 = self._get_node_format(node_2)
+
+        if format_1.is_channels_first() or format_2.is_channels_first():
+            # At least 1 is channels first
+            if not format_1.is_channels_first():
+                self._assign_format_to_node(node_1, NodeFormat.CHANNELS_FIRST)
+            elif not format_2.is_channels_first():
+                self._assign_format_to_node(node_2, NodeFormat.CHANNELS_FIRST)
+
+        else:
+            self._assign_format_to_node(node_1, NodeFormat.FORMATLESS)
+            self._assign_format_to_node(node_2, NodeFormat.FORMATLESS)
 
     def _assign_format_to_node(self, node: Node, node_format: NodeFormat):
         """

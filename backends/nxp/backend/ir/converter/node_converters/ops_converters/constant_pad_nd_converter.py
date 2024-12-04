@@ -1,0 +1,81 @@
+# Copyright 2024 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from typing import Collection
+
+import numpy as np
+from torch.fx import Node
+
+from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import tf_lite_type_to_numpy, \
+    create_channels_first_to_channels_last_permutation, apply_permutation_to
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
+from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import pad_v2_options
+
+
+class ConstantPadNDConverter(NodeConverter):
+
+    # noinspection PyMethodMayBeStatic
+    def _convert_paddings_to_tflite(self, paddings: Collection[int], input_tensor: tflite_model.Tensor) -> list[int]:
+        """ Convert the PyTorch paddings to TFLite paddings.
+            The PyTorch padding is added to the individual dimensions from the back (slightly confusing), see:
+             https://pytorch.org/docs/stable/generated/torch.nn.functional.pad.html#torch.nn.functional.pad
+            TFLite padding has shape [input_rank, 2], where start padding and end padding is specified for every
+             corresponding dimension.
+
+        :param paddings: The PyTorch paddings.
+        :param input_tensor: Main input tensor of the `aten.constant_pad_nd` operator.
+        :return: The equivalent TFLite paddings.
+        """
+
+        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L38-L40
+        assert len(paddings) <= (input_tensor.rank * 2), f'`aten.constant_pad_nd` has invalid paddings `{paddings}`.'
+
+        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L30-L31
+        assert len(paddings) % 2 == 0, f'`aten.constant_pad_nd` has odd paddings `{paddings}`.'
+
+        # 1st, group the individual paddings into groups of 2 (padding at the start and at the end for every dimension).
+        paddings = np.array(paddings).reshape(-1, 2)
+
+        # 2nd, reverse the padding groups. (The order is inverse between PyTorch and TFLite).
+        paddings = list(reversed(paddings))
+
+        # 3rd, add [0, 0]s from the start to get `rank` padding groups.
+        paddings = [[0, 0]] * (input_tensor.rank - len(paddings)) + paddings
+
+        if input_tensor.tensor_format.is_channels_last():
+            # Permute the `tfl_paddings` to match.
+            to_tflite_perm = create_channels_first_to_channels_last_permutation(input_tensor.rank)
+            paddings = apply_permutation_to(paddings, to_tflite_perm)
+
+        return paddings
+
+    def convert(self, node: Node):
+        """ Convert the `aten.constant_pad_nd` operator to TFLite `PadV2`. """
+
+        t_op = self._create_tflite_op_with_io_tensors(node)
+
+        x = t_op.tmp_inputs[0]
+        y = t_op.tmp_outputs[0]
+        paddings = node.args[1]
+        constant = node.args[2]
+
+        paddings = self._convert_paddings_to_tflite(paddings, x)
+
+        paddings_tensor = self.builder.create_tensor_for_data(np.asarray(paddings, 'int32'), 'paddings')
+        constant_tensor = self.builder.create_tensor_for_data(
+            np.array([constant], tf_lite_type_to_numpy(x.type)),
+            'constant'
+        )
+
+        # Assign the operator its TFLite inputs and outputs.
+        t_op.tmp_inputs = [x, paddings_tensor, constant_tensor]
+        t_op.tmp_outputs = [y]
+        t_op.builtin_options = pad_v2_options.PadV2()
+
+        ops_to_add = OpsList(middle_op=t_op)
+
+        self.builder.append_operators(ops_to_add.flatten())

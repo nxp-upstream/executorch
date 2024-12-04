@@ -170,12 +170,14 @@ class ToNCHWPreprocess(TFLiteIOPreprocess):
 
 def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, atol=1.e-8,
                         save_models=False,
+                        tfl_model: (bytes, dict) = None,
                         tflite_input_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
                         tflite_output_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
                         conversion_config: ConversionConfig = ConversionConfig(),
                         tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO) -> (TFLiteExecutor, EdgeProgramExecutor):
 
-    tfl_model, _ = EdgeProgramToIRConverter().convert_program(edge_program, conversion_config)
+    if tfl_model is None:
+        tfl_model, _ = EdgeProgramToIRConverter().convert_program(edge_program, conversion_config)
 
     edge_program_executor = EdgeProgramExecutor(edge_program)
     edge_program_output = edge_program_executor.inference(input_data)

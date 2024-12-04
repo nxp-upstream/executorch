@@ -4,19 +4,29 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Collection
+
 import torch
 
 
 class Conv2dModule(torch.nn.Module):
-    def __init__(self, bias: bool = True):
+    def __init__(self, bias: bool = True,
+                 dilation: int = 1,
+                 in_channels: int = 4,
+                 kernel_size: int = 3,
+                 out_channels: int = 8,
+                 stride: int = 2,
+    ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
-            in_channels=4, out_channels=8, kernel_size=3, bias=bias, stride=2, dilation=1
+            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
+            bias=bias, stride=stride, dilation=dilation
         )
 
     def forward(self, x):
         return self.conv(x)
+
 
 class Conv2dAndMaxPool2DModule(torch.nn.Module):
     def __init__(self):
@@ -28,6 +38,7 @@ class Conv2dAndMaxPool2DModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return self.maxpool(x)
+
 
 class SoftmaxModule(torch.nn.Module):
     def __init__(self, dim: int):
@@ -58,3 +69,55 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class ConvFCSoftmaxModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(4, 64, 2, bias=False)
+        self.fc = torch.nn.Linear(1024, 10)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = torch.reshape(x, (-1, 1024))
+        x = self.fc(x)
+        x = self.softmax(x)
+
+        return x
+
+
+class ConstantPadNDModule(torch.nn.Module):
+    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+        super().__init__()
+        self.paddings = paddings
+        self.constant = constant
+
+    def forward(self, x):
+        if self.constant is None:
+            return torch.nn.functional.pad(x, tuple(self.paddings), 'constant')
+        else:
+            return torch.nn.functional.pad(x, tuple(self.paddings), 'constant', self.constant)
+
+
+class ConstantPadNDConvModule(torch.nn.Module):
+    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+        super().__init__()
+        self.pad = ConstantPadNDModule(paddings, constant)
+        self.conv = Conv2dModule()
+
+    def forward(self, x):
+        x = self.pad(x)
+        return self.conv(x)
+
+class Maxpool2dModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.maxpool2d = torch.nn.MaxPool2d(
+            kernel_size=3, stride=2, dilation=1
+        )
+
+    def forward(self, x):
+        return self.maxpool2d(x)

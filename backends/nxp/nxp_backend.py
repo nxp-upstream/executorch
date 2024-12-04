@@ -9,22 +9,20 @@
 #
 
 import logging
+import struct
 from typing import final, List, Optional
 
-from torch.export.exported_program import ExportedProgram
-
+import numpy as np
 import torch
+from torch.export.exported_program import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
-from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node
+from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node, NeutronNodeArtifacts
 from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-
-from torch.export.exported_program import ExportedProgram
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 
@@ -88,6 +86,9 @@ def generate_neutron_compile_spec(
 
 @final
 class NeutronBackend(BackendDetails):
+    # Counter how many times the preprocess function is called.
+    # Works only when debugging is allowed
+    counter = 0
 
     @staticmethod
     def preprocess(
@@ -129,22 +130,135 @@ class NeutronBackend(BackendDetails):
 
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
-            for tensor, tensor_format in io_formats.items():
-                if tensor_format == TensorFormat.CHANNELS_LAST:
-                    channel_last_format = b'1'
-                else:
-                    channel_last_format = b'0'
-
-                compile_spec.append(CompileSpec(tensor, channel_last_format))
 
             # Call the neutron converter with the TFLite model.
             neutron_model = NeutronConverterManager().convert(tflite_model)
 
-            # Extract the Neutron microcode, weights and kernels from the Neutron Node in the `neutron_model`.
-            payload = extract_artifacts_from_neutron_node(neutron_model)
-            binary = payload.processed_bytes
+            # Dump the tflite file if logging level is enabled
+            if logging.root.isEnabledFor(logging.DEBUG):
+                import os
+                logging.debug(f"Serializing converted graph number {NeutronBackend.counter} to {os.getcwd()}")
+                with open(f"{str(NeutronBackend.counter)}_pure.et.tflite", "wb") as f:
+                    f.write(bytes(tflite_model))
+                with open(f"{str(NeutronBackend.counter)}_neutron.et.tflite", "wb") as f:
+                    f.write(bytes(neutron_model))
+                NeutronBackend.counter = NeutronBackend.counter + 1
+
+            binary = PayloadComposer().get_binary_payload(io_formats, neutron_model)
 
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
         return PreprocessResult(processed_bytes=binary)
+
+
+class PayloadComposer:
+    ALIGNMENT = 16
+
+    def _padding_format_string_for_array(self, array: np.ndarray) -> str:
+        """ Create a padding format string for the given array, which will add 0s at the end for correct alignment.
+            E.g. the string '10x' represents adding 10 bytes of '0' padding.
+        """
+        assert array.dtype == np.dtype('uint8')
+
+        overflow = array.size % self.ALIGNMENT
+        if overflow == 0:
+            return ''
+
+        # Overflow 1 means padding 15, so use `alignment - overflow` padding.
+        return f'{self.ALIGNMENT - overflow}x'
+
+    def _format_string_for_array(self, array: np.ndarray) -> str:
+        """ Create a format string which will represent the provided array. It also handles the necessary alignment.
+            E.g. for array [1,2,3] we get '3s13x', because '3s' means string of 3 bytes, and `13x` means adding 13 bytes
+             of '0' padding at the end (for 16B alignment).
+        """
+        assert array.dtype == np.dtype('uint8')
+
+        return f'{array.size}s{self._padding_format_string_for_array(array)}'
+
+    def _create_payload_header(self, io_formats) -> np.ndarray:
+        """
+        Create bytes header for returned payload. It contains information about
+        input and output tensor formats. Tensors are ordered based on graph signature
+        of ExportedProgram. Header schema:
+
+        +----------------------------------+------------------------+---------------------------+
+        | Input TensorFormats length (1B)  | 1st tensor format (1B) | [nth* tensor format (1B)] |
+        +----------------------------------+------------------------+---------------------------+
+        | Output TensorFormats length (1B) | 1st tensor format (1B) | [nth* tensor format (1B)] |
+        +----------------------------------+------------------------+---------------------------+
+
+        :param io_formats: IO tensors formats.
+        :return: Bytes representation of payload header.
+        """
+        inputs = io_formats["inputs"]
+        outputs = io_formats["outputs"]
+
+        assert len(inputs) < 256, "Models with more than 255 inputs are not supported."
+        assert len(outputs) < 256, "Models with more than 255 outputs are not supported."
+
+        header_data = [len(inputs)]
+        for tensor, tensor_format in inputs.items():
+            header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
+
+        header_data.append(len(outputs))
+        for tensor, tensor_format in outputs.items():
+            header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
+
+        # noinspection PyTypeChecker
+        return np.array(header_data, dtype=np.uint8)
+
+    def _pack_with_alignment(self, header: np.ndarray, neutron_artifacts: NeutronNodeArtifacts) -> bytes:
+        """
+        Packs provided data into serialized binary data of the following C struct:
+         struct NeutronBinary {
+             uint8[] header;
+             uint8[] microcode;
+             uint8[] weights;
+             uint8[] kernels;
+         }
+        The individual components must be aligned to 16 bytes.
+        """
+
+        return struct.pack(
+            self._format_string_for_array(header) +
+            self._format_string_for_array(neutron_artifacts.microcode) +
+            self._format_string_for_array(neutron_artifacts.weights) +
+            self._format_string_for_array(neutron_artifacts.kernels),
+            header.tobytes(),
+            neutron_artifacts.microcode.tobytes(),
+            neutron_artifacts.weights.tobytes(),
+            neutron_artifacts.kernels.tobytes()
+        )
+
+    def get_binary_payload(self, io_formats, neutron_model) -> bytes:
+        """
+        Get binary payload for provided input/output tensor formats and neutron_model. Returned data have
+        following structure:
+
+        +----------------------------------------------------------------------------------------------------------------+
+        |                                            16 bytes aligned blocks                                             |
+        +===========================+===========================+============================+===========================+
+        | Input formats length (1B) | [nth* tensor format (1B)] | Output formats length (1B) | [nth* tensor format (1B)] |
+        +---------------------------+---------------------------+----------------------------+---------------------------+
+        |                                                Neutron microcode                                               |
+        +----------------------------------------------------------------------------------------------------------------+
+        |                                                 Neutron weights                                                |
+        +----------------------------------------------------------------------------------------------------------------+
+        |                                                 Neutron kernels                                                |
+        +----------------------------------------------------------------------------------------------------------------+
+
+        Tensor format definition: '0x1' == CHANNELS_LAST, '0x0' == FORMATLESS (no format).
+
+        :param io_formats: Dictionary with keys 'inputs' and 'outputs' that contains dictionaries
+            mapping tensor name to TensorFormat.
+        :param neutron_model: Neutron model with single NeutronGraph node.
+        :return: 16 bytes aligned binary payload.
+        """
+        header = self._create_payload_header(io_formats)
+
+        # Extract the Neutron microcode, weights and kernels from the Neutron Node in the `neutron_model`.
+        neutron_artifacts = extract_artifacts_from_neutron_node(neutron_model)
+
+        return self._pack_with_alignment(header, neutron_artifacts)

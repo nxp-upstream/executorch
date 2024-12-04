@@ -7,9 +7,14 @@
 
 import logging
 import operator
-from typing import final, List
+from dataclasses import dataclass
+from typing import final, List, Dict, Mapping
 
 import torch
+from torch.export.exported_program import ExportedProgram
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import OperatorSupportBase
+
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -19,125 +24,215 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
-from torch.fx.passes.operator_support import OperatorSupportBase
 
-# These operators are directly supported by Neutron Kernels
+class QDQClusterRecognizer:
+    """
+    Implementation of the Quantize - Dequantize clustering.
+    The quantization is captured in the ExecuTorch program using the QDQ (Quantize - DeQuantize) representation. Here
+    the inputs to a node comes from some dequantize nodes and outputs goes to some quantize nodes.
+    The QDQClusterRecognizer identifies operator performing the quantized arithmetic represented in QDQ form, and the
+    corresponding QDQ cluster. The QDQ cluster consists of the:
+    - dequantize nodes producing the inputs to the compute node
+    - compute node (e.g. conv)
+    - auxiliary nodes, like getitem, view_copy, ... which does not perform a core computation
+    - quantize nodes processing the output of the compute node.
+    """
+
+    @dataclass
+    class QDQCluster:
+        """
+        Dataclass to hold the QDQ cluster instance. For the purpose of Partitioner we hold the list of operators,
+        in the QDQ cluster (`ops`) and the compute node what the QDQ cluster is built around.
+        The compute node is what is represented in the Neutron IR. the rest of nodes are helpers for data transformation,
+        and defines the quantization parameters. This gives the partitioner the ability to:
+            - identify if the node is part of a QDQ cluster
+            - reference the compute node in the QDQ cluster
+        """
+        compute_node: torch.fx.Node
+        ops: List[torch.fx.Node]
+
+    QUANTIZE_OPERATORS = [
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    ]
+
+    DEQUANTIZE_OPERATORS = [
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    ]
+
+    AUXILIARY_OPS = [
+        operator.getitem,
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+
+    def __init__(self):
+        self.cluster_map: dict[str, QDQClusterRecognizer.QDQCluster] = {}
+
+    @staticmethod
+    def is_quant_node(node: torch.fx.Node) -> bool:
+        return node.target in QDQClusterRecognizer.QUANTIZE_OPERATORS
+
+    @staticmethod
+    def is_dequant_node(node: torch.fx.Node) -> bool:
+        return node.target in QDQClusterRecognizer.DEQUANTIZE_OPERATORS
+
+    @staticmethod
+    def is_auxiliary_node(node: torch.fx.Node) -> bool:
+        return node.target in QDQClusterRecognizer.AUXILIARY_OPS
+
+    def get_qdq_cluster_input_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+        """
+        Return the list of nodes representing the input part of the QDQ cluster of the node `node`.
+        Those are various dequantization nodes (see DEQUANTIZE_OPERATORS) optionally followed by auxiliary
+        nodes.
+        If the `node` not meets the QDQ cluster schema, returns empty list.
+        """
+
+        # Iterative search for input nodes of the QDQ Cluster:
+        nodes_to_check = [node]
+        qdq_cluster = []
+        while len(nodes_to_check) > 0:
+            n = nodes_to_check.pop()
+            qdq_cluster.append(n)
+            if self.is_dequant_node(n):
+                continue
+            input_nodes_from_dequant_or_helper = [(self.is_dequant_node(i) or self.is_auxiliary_node(i))
+                                                  for i in n.all_input_nodes]
+            if all(input_nodes_from_dequant_or_helper):
+                nodes_to_check.extend(n.all_input_nodes)
+            else:
+                return []
+
+        logging.debug(f"Dequant Cluster for {node} is: {qdq_cluster}")
+        return qdq_cluster
+
+    def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+        """
+        Returns the list of nodes representing the output part of the QDQ cluster of the `node`.
+        Those are various quantize nodes (see QUANTIZE_OPERATORS) preceded by auxiliary nodes.
+        If the `node` not meets the QDQ cluster schema, returns empty list.
+        """
+
+        # Iterative search for output nodes of the QDQ Cluster:
+        nodes_to_check = [node]
+        qdq_cluster = []
+        while len(nodes_to_check) > 0:
+            n = nodes_to_check.pop()
+            qdq_cluster.append(n)
+            if self.is_quant_node(n):
+                continue
+            consumers = [ngn for ngn in list(node.graph.nodes) if n in ngn.all_input_nodes]
+            logging.debug(f"\t Users for node {n} are: {consumers}")
+            output_nodes_to_quant_or_helper = [(self.is_quant_node(i) or self.is_auxiliary_node(i))
+                                               for i in consumers]
+            if all(output_nodes_to_quant_or_helper):
+                nodes_to_check.extend(consumers)
+            else:
+                return []
+
+        logging.debug(f"Quant Cluster for {node} is {qdq_cluster}")
+        return qdq_cluster
+
+    def get_qdq_cluster(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+        """
+        Returns the QDQ cluster of the operator, if quantized. If operator is not quantized, returns empty list.
+        """
+        logging.debug(node)
+        input_qdq_cluster = self.get_qdq_cluster_input_part(node)
+        output_qdq_cluster = self.get_qdq_cluster_output_part(node)
+        if input_qdq_cluster and output_qdq_cluster:
+            return list(set(input_qdq_cluster).union(output_qdq_cluster))
+        else:
+            return []
+
+    def tag_nodes(self, nodes: List[torch.fx.Node], cluster_name: str) -> None:
+        """
+        Tags a node and its related dequant and quant nodes with a specified cluster name
+        """
+        for node in nodes:
+            logging.info(f"Tagging node {node} as {cluster_name}")
+            node.meta["cluster"] = cluster_name
+
+    def tag_qdq_clusters(self, nodes: List[torch.fx.Node]):
+        """
+        Identifies QDQ clusters and tag them based on compute operation inside.
+        """
+
+        for node in nodes:
+            if (node.op == "call_function" and
+                    not self.is_quant_node(node) and
+                    not self.is_dequant_node(node)):
+                cluster = self.get_qdq_cluster(node)
+                if cluster:
+                    cluster_name = f"{node.name}_cluster"
+                    self.tag_nodes(cluster, cluster_name)
+                    self.cluster_map[cluster_name] = self.QDQCluster(node, cluster)
+
+
+# Operators supported on Neutron.
+# Note: This configuration assign the whole cifar10 model on the neutron. If you need a specific case for testing or
+# evaluation, comment out particular operator.
 NeutronSupportedOperatorsList = [
-    # exir_ops.edge.aten._softmax.default,
-    # exir_ops.edge.aten.abs.default,
-    # exir_ops.edge.aten.add.Scalar,
-    # exir_ops.edge.aten.bmm.default,
-    # exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten._softmax.default,
     # exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.convolution.default,
-    # exir_ops.edge.aten.leaky_relu.default,
-    # exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
-    # exir_ops.edge.aten.mean.dim,
-    # exir_ops.edge.aten.mm.default,
-    # exir_ops.edge.aten.mul.Scalar,
-    # exir_ops.edge.aten.relu.default,
-    # exir_ops.edge.aten.slice_copy.Tensor,
-    # exir_ops.edge.aten.sub.Scalar,
-    # exir_ops.edge.aten.tanh.default,
-    # operator.getitem,
+    exir_ops.edge.aten.mm.default,
+    exir_ops.edge.aten.addmm.default,
+    # exir_ops.edge.aten.view_copy.default, # TODO: The view copy, is used as reshape. This shall be delegated only if the
+                                          # the reshape is not the only operator in the cluster.
 ]
 
+
 class NeutronSupportedOperators(OperatorSupportBase):
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        """
-        Check if the PyTorch op that gets called is supported for Neutron
-        or if it is part of a QDQ cluster.
-        """
-        is_neutron_supported_op = node.op == "call_function" and node.target in NeutronSupportedOperatorsList
-        is_part_of_the_cluster = "cluster" in node.meta
 
-        # TODO(Lukas) Naive approach. This will be replaced by 'getitem' recognition in QDQ clustering
-        is_maxpool_getitem = (node.name.startswith("getitem") and
-                              node.all_input_nodes[0].target == exir_ops.edge.aten.max_pool2d_with_indices.default)
+    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster]):
+        self.qdq_clusters = qdq_clusters
 
-        return is_neutron_supported_op or is_part_of_the_cluster or is_maxpool_getitem
+    def _is_node_quantized(self, node: torch.fx.node.Node):
+        return "cluster" in node.meta
+
+    def _is_node_call_function(self, node: torch.fx.node.Node):
+        return node.op == "call_function"
+
+    def _is_node_supported_compute(self, node: torch.fx.node.Node) -> bool:
+        """
+        Operator checking function for compute nodes.
+        """
+        return (self._is_node_call_function(node) and
+                self._is_node_quantized(node) and
+                node.target in NeutronSupportedOperatorsList)
+
+    def _is_node_supported_non_compute(self, node: torch.fx.node.Node) -> bool:
+        """
+        If the node is a quantize, dequantize or auxiliary node inside a QDQ cluster, the support on Neutron
+        is determined by the support of the compute operator.
+        """
+        return (self._is_node_quantized(node) and
+                self._is_node_supported_compute(self.qdq_clusters[node.meta["cluster"]].compute_node))
+
+    def is_node_supported(self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node) -> bool:
+        """
+        Check if the Edge operator is supported on Neutron.
+        """
+
+        if (QDQClusterRecognizer.is_quant_node(node) or
+                QDQClusterRecognizer.is_dequant_node(node) or
+                QDQClusterRecognizer.is_auxiliary_node(node)):
+            return self._is_node_supported_non_compute(node)
+        else:
+            return self._is_node_supported_compute(node)
+
 
 @final
 class NeutronPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
-
-    def is_quant_node(self, node: torch.fx.node.Node):
-        return node.target in {
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-        }
-    
-    def is_dequant_node(self, node: torch.fx.node.Node):
-        return node.target in {
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        }
-
-    def tag_clusters(self, nodes):
-        """
-        Identifies clusters of nodes that involve quantisation and dequantisation 
-        operations. It tags these nodes with a cluster name, which can be used
-        later for partitioning and optimising the graph.
-
-        Clustering is the process of grouping nodes in the computation graph that are related
-        to quantisation and dequantisation operations. This is useful for optimising the graph
-        for execution on specialized hardware.
-        """
-        def get_dequant_inputs(node):
-            """
-            This function returns all the dequant operators which produce inputs to the node.
-            However, if the operator has 3 inputs and only one comes from dequant, the function
-            will return true and consequently the code condition `if dequant_inputs:` will be true.
-
-            This is done to handle the unexpected behavior of the NeutronQuantizer with the bias tensor (EIEX-66).
-            """
-            return [
-                input_node for input_node in node.args
-                if isinstance(input_node, torch.fx.node.Node) and self.is_dequant_node(input_node)
-            ]
-
-        def get_quant_outputs(node):
-            """
-            Retrieve the quantised outputs of a given node.
-
-            This function examines the outputs of the provided node to identify
-            quantised nodes. It also checks if the output operation is a call to the
-            `operator.getitem` function and then inspects the operator's output to
-            find quantised nodes.
-            """
-            quant_outputs = []
-            for user in node.users:
-                if user.op == "call_function" and user.target == operator.getitem:
-                    for grandchild in user.users:
-                        if self.is_quant_node(grandchild):
-                            quant_outputs.append(grandchild)
-                elif self.is_quant_node(user):
-                    quant_outputs.append(user)
-            return quant_outputs
-
-        def tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs):
-            # Tags a node and its related dequant and quant nodes with a specified cluster name
-            logging.info(f"Tagging node {node} as {cluster_name}")
-            node.meta["cluster"] = cluster_name
-            for dequant_node in dequant_inputs:
-                dequant_node.meta["cluster"] = cluster_name
-            for quant_node in quant_outputs:
-                quant_node.meta["cluster"] = cluster_name
-
-        for node in nodes:
-            if node.op == "call_function":
-                dequant_inputs = get_dequant_inputs(node)
-                quant_outputs = get_quant_outputs(node)
-                if dequant_inputs and quant_outputs:
-                    cluster_name = f"{node.name}_cluster"
-                    tag_node_and_related(node, cluster_name, dequant_inputs, quant_outputs)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -148,13 +243,15 @@ class NeutronPartitioner(Partitioner):
         graph_module = exported_program.graph_module
         nodes = list(graph_module.graph.nodes)
 
-        self.tag_clusters(nodes)
-        
+        qdq_clusterer = QDQClusterRecognizer()
+
+        qdq_clusterer.tag_qdq_clusters(nodes)
+
         graph_module.recompile()
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeutronSupportedOperators(),
+            NeutronSupportedOperators(qdq_clusterer.cluster_map),
             allows_single_node_partition=True,
         )
 

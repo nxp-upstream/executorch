@@ -5,28 +5,24 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import struct
+from dataclasses import dataclass
 
 import numpy as np
 
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
 from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
-from executorch.exir.backend.backend_details import PreprocessResult
 
 
-def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) -> PreprocessResult:
+@dataclass
+class NeutronNodeArtifacts:
+    microcode: np.ndarray
+    weights: np.ndarray
+    kernels: np.ndarray
+
+
+def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) -> NeutronNodeArtifacts:
     """ Extract the payload (microcode, weights, kernels) from the Neutron Node in the given TFLite model.
         The model can be provided as a binary flatbuffer, or a path to a `.tflite` model.
-
-        The return format is a `PreprocessResult` object, and its `processed_bytes` attribute contains the serialized
-         binary data of the following C struct:
-         struct NeutronBinary {
-            uint8[] microcode;
-            uint8[] weights;
-            uint8[] kernels;
-        }
-
-        The individual components must be aligned to 16 bytes.
     """
 
     if isinstance(tflite_flatbuffer_or_path, str):
@@ -77,35 +73,4 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
     assert microcode.dtype == weights.dtype == kernels.dtype == np.dtype('uint8'), \
         'The Neutron Node uses unexpected data types.'
 
-    # Align to 16B (according to commit 008bdc17670).
-    alignment = 16
-
-    def padding_format_string_for_array(array: np.ndarray) -> str:
-        """ Create a padding format string for the given array, which will add 0s at the end for correct alignment.
-            E.g. the string '10x' represents adding 10 bytes of '0' padding.
-        """
-        assert array.dtype == np.dtype('uint8')
-
-        overflow = array.size % alignment
-        if overflow == 0:
-            return ''
-
-        # Overflow 1 means padding 15, so use `alignment - overflow` padding.
-        return f'{alignment - overflow}x'
-
-    def format_string_for_array(array: np.ndarray) -> str:
-        """ Create a format string which will represent the provided array. It also handles the necessary alignment.
-            E.g. for array [1,2,3] we get '3s13x', because '3s' means string of 3 bytes, and `13x` means adding 13 bytes
-             of '0' padding at the end (for 16B alignment).
-        """
-        assert array.dtype == np.dtype('uint8')
-
-        return f'{array.size}s{padding_format_string_for_array(array)}'
-
-    # The resulting payload should be structured as a binary in the format defined in the function header.
-    payload = struct.pack(
-        format_string_for_array(microcode) + format_string_for_array(weights) + format_string_for_array(kernels),
-        microcode.tobytes(), weights.tobytes(), kernels.tobytes()
-    )
-
-    return PreprocessResult(processed_bytes=payload)
+    return NeutronNodeArtifacts(microcode, weights, kernels)

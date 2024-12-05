@@ -77,13 +77,13 @@ void transposeInput(const void* src, void* dest, const ArrayRef<exec_aten::Sizes
   }
   switch (element_size) {
   case 1:
-    return transposeToChannelFirst<uint8_t>(static_cast<const uint8_t*>(src), static_cast<uint8_t*>(dest), N, H, W, C);
+    return transposeToChannelLast<uint8_t>(static_cast<const uint8_t*>(src), static_cast<uint8_t*>(dest), N, C, H, W);
   case 2:
-    return transposeToChannelFirst<uint16_t>(static_cast<const uint16_t*>(src), static_cast<uint16_t*>(dest), N, H, W, C);
+    return transposeToChannelLast<uint16_t>(static_cast<const uint16_t*>(src), static_cast<uint16_t*>(dest), N, C, H, W);
   case 4:
-    return transposeToChannelFirst<uint32_t>(static_cast<const uint32_t*>(src), static_cast<uint32_t*>(dest), N, H, W, C);
+    return transposeToChannelLast<uint32_t>(static_cast<const uint32_t*>(src), static_cast<uint32_t*>(dest), N, C, H, W);
   case 8:
-    return transposeToChannelFirst<uint64_t>(static_cast<const uint64_t*>(src), static_cast<uint64_t*>(dest), N, H, W, C);
+    return transposeToChannelLast<uint64_t>(static_cast<const uint64_t*>(src), static_cast<uint64_t*>(dest), N, C, H, W);
   }
 }
 
@@ -102,13 +102,13 @@ void transposeOutput(const void* src, void* dest, const ArrayRef<exec_aten::Size
   }
   switch (element_size) {
   case 1:
-    return transposeToChannelLast<uint8_t>(static_cast<const uint8_t*>(src), static_cast<uint8_t*>(dest), N, H, W, C);
+    return transposeToChannelFirst<uint8_t>(static_cast<const uint8_t*>(src), static_cast<uint8_t*>(dest), N, C, H, W);
   case 2:
-    return transposeToChannelLast<uint16_t>(static_cast<const uint16_t*>(src), static_cast<uint16_t*>(dest), N, H, W, C);
+    return transposeToChannelFirst<uint16_t>(static_cast<const uint16_t*>(src), static_cast<uint16_t*>(dest), N, C, H, W);
   case 4:
-    return transposeToChannelLast<uint32_t>(static_cast<const uint32_t*>(src), static_cast<uint32_t*>(dest), N, H, W, C);
+    return transposeToChannelFirst<uint32_t>(static_cast<const uint32_t*>(src), static_cast<uint32_t*>(dest), N, C, H, W);
   case 8:
-    return transposeToChannelLast<uint64_t>(static_cast<const uint64_t*>(src), static_cast<uint64_t*>(dest), N, H, W, C);
+    return transposeToChannelFirst<uint64_t>(static_cast<const uint64_t*>(src), static_cast<uint64_t*>(dest), N, C, H, W);
   }
 }
 

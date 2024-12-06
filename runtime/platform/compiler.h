@@ -118,3 +118,11 @@
 #else
 #define __ET_FUNCTION __FUNCTION__
 #endif // __has_builtin(__builtin_FUNCTION)
+
+// Define size_t and ssize_t.
+#if defined(__ARMGCC_VERSION)
+#include <sys/types.h>
+#else
+#include <stddef.h>
+using ssize_t = ptrdiff_t;
+#endif

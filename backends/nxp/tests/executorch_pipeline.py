@@ -1,6 +1,8 @@
 import torch
+from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
+from executorch import exir
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -41,3 +43,9 @@ def to_quantized_executorch_program(model: torch.nn.Module, input_shape: tuple) 
             extract_delegate_segments=False, extract_constant_segment=False
         )
     )
+
+
+def to_edge_program(model: nn.Module, input_shape) -> EdgeProgramManager:
+    example_input = (torch.ones(input_shape),)
+    exir_program = torch.export.export(model, example_input)
+    return exir.to_edge(exir_program)

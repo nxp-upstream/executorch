@@ -40,6 +40,17 @@ class Conv2dAndMaxPool2DModule(torch.nn.Module):
         return self.maxpool(x)
 
 
+class Conv2dConstantPadNDModule(torch.nn.Module):
+    def __init__(self, paddings: Collection[int], constant: float | int | None = None):
+        super().__init__()
+        self.pad = ConstantPadNDModule(paddings, constant)
+        self.conv = Conv2dModule()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.pad(x)
+
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self, dim: int):
         super().__init__()
@@ -110,6 +121,7 @@ class ConstantPadNDConvModule(torch.nn.Module):
     def forward(self, x):
         x = self.pad(x)
         return self.conv(x)
+
 
 class Maxpool2dModule(torch.nn.Module):
     def __init__(self):

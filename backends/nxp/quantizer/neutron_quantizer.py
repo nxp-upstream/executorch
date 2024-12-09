@@ -100,6 +100,69 @@ class MaxPoolPattern(QuantizationPattern):
         assert False
 
 
+class SharedSpecPattern(QuantizationPattern):
+    """
+    Quantization pattern for shared quantization.
+
+    The quantization is derived from the previous node quantization and the input and output shares the same
+    quantization parameters (scale and zero-point).
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        pass
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        assert len(fused_partition[0].input_nodes) == 1
+        prev_node = fused_partition[0].input_nodes[0]
+
+        # In the case of a node with shared quantization spec has no previous node, return None to not quantize the node
+        if 'quantization_annotation' not in prev_node.meta:
+            return None
+        else:
+            qspec = SharedQuantizationSpec(prev_node)
+
+            return PartitionAnchors(
+                inputs=[(node, 0)],
+                weights=[],
+                biases=[],
+                output=[(node, qspec), ],
+            )
+
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        assert False
+
+
+class ConstPadNdPattern(SharedSpecPattern):
+    """
+    Quantizer for Const_pad_nd operator.
+    """
+
+    def partition_types(self):
+        return [torch._C._nn.pad]
+
+
+class PermuteCopyPattern(SharedSpecPattern):
+    """
+    Quantizer for Permute_copy operator.
+    """
+
+    def partition_types(self):
+        return [torch.permute]
+
+
+class ViewCopyPattern(SharedSpecPattern):
+    """
+    Quantizer for View_copy operator.
+    """
+
+    def partition_types(self):
+        return [torch.reshape]
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -159,6 +222,9 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceGenericQuantizer(LinearPattern(), static_fc_qconfig),
                 CadenceGenericQuantizer(MaxPoolPattern(), static_qconfig),
                 CadenceGenericQuantizer(SoftMaxPattern(), static_qconfig),
+                CadenceGenericQuantizer(ViewCopyPattern(), static_qconfig),
+                CadenceGenericQuantizer(ConstPadNdPattern(), static_qconfig),
+                CadenceGenericQuantizer(PermuteCopyPattern(), static_qconfig),
             ]
         )
 

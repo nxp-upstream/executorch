@@ -5,6 +5,7 @@
 
 from typing import Collection
 
+import copy
 import numpy as np
 from torch.fx import Node
 
@@ -12,6 +13,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsLi
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import tf_lite_type_to_numpy, \
     create_channels_first_to_channels_last_permutation, apply_permutation_to
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.quantization_utils import propagate_quantization, quantize_int8
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import pad_v2_options
 
@@ -64,12 +66,22 @@ class ConstantPadNDConverter(NodeConverter):
         constant = node.args[2]
 
         paddings = self._convert_paddings_to_tflite(paddings, x)
-
         paddings_tensor = self.builder.create_tensor_for_data(np.asarray(paddings, 'int32'), 'paddings')
-        constant_tensor = self.builder.create_tensor_for_data(
-            np.array([constant], tf_lite_type_to_numpy(x.type)),
-            'constant'
-        )
+
+        if x.quantization is None:
+            constant_tensor = self.builder.create_tensor_for_data(
+                np.array([constant], tf_lite_type_to_numpy(x.type)),
+                'constant'
+            )
+        else:
+            quantization = copy.copy(x.quantization)
+            scale, zero_point  = quantization.scale.vector, quantization.zero_point.vector
+            constant_data = quantize_int8(np.array([constant], np.float32), scale, zero_point)
+            constant_tensor = self.builder.create_tensor_for_data(
+                constant_data,
+                'constant'
+            )
+            constant_tensor.quantization = quantization
 
         # Assign the operator its TFLite inputs and outputs.
         t_op.tmp_inputs = [x, paddings_tensor, constant_tensor]

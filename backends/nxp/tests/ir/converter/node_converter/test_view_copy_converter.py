@@ -1,15 +1,17 @@
-from typing import Sequence
-
 import numpy as np
+import pytest
 import torch
 from torch import nn
+from typing import Sequence
 
+from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import ModelBuilder
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.conv_2d_options import Conv2D
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.reshape_options import Reshape
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.transpose_options import Transpose
-from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program
+from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import convert_run_compare, ToNHWCPreprocess, ToNCHWPreprocess
+from torch.export import ExportedProgram
 
 
 class FormatlessToChannelsFirstModule(nn.Module):
@@ -42,6 +44,17 @@ class ConvReshapeModule(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
+        x = torch.reshape(x, self.new_shape)
+        return x
+
+class LinearReshapeModule(torch.nn.Module):
+    def __init__(self, new_shape: Sequence[int]):
+        super().__init__()
+        self.linear = nn.Linear(64, 32, bias=True)
+        self.new_shape = new_shape
+
+    def forward(self, x):
+        x = self.linear(x)
         x = torch.reshape(x, self.new_shape)
         return x
 
@@ -130,3 +143,47 @@ def test__formatless_to_formatless(mocker):
     ops = tflite_model.sub_graphs[0].operators.vector
     assert len(ops) == 1  # No extra Transpose ops.
     assert isinstance(ops[0].builtin_options, Reshape)
+
+
+@pytest.mark.parametrize("input_shape, new_shape", [
+    pytest.param((8, 64), (1, 16, 4, 4), id="2D"),
+])
+def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    # Run conversion
+    _ = to_quantized_edge_program(LinearReshapeModule(new_shape=new_shape), input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    edge_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    np.random.seed(23)
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.)
+
+
+@pytest.mark.parametrize("input_shape, new_shape", [
+    pytest.param((1, 4, 16, 16), (50, 18), id="4D, batch_size=1"),
+    pytest.param((10, 4, 16, 16), (500, 18), id="4D, , batch_size=10"),
+])
+def test_view_copy_w_conv_quant_conversion(mocker, input_shape, new_shape):
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+
+    # Run conversion
+    _ = to_quantized_edge_program(ConvReshapeModule(channels=input_shape[1], new_shape=new_shape), input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    edge_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    np.random.seed(23)
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
+                        tfl_model=tflite_flatbuffers_model, atol=1.)

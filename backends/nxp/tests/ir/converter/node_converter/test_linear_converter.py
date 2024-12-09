@@ -1,30 +1,27 @@
-import torch
+import numpy as np
 
-from executorch import exir
+from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program
 from executorch.backends.nxp.tests.executors import convert_run_compare
 from executorch.backends.nxp.tests.models import LinearModule
 
 
 def test_linear_conversion__with_bias():
-    model = LinearModule(bias=True)
+    input_shape = (10, 32)
 
-    example_input = (torch.ones(10, 32),)
-    exir_program = torch.export.export(model, example_input)
-    edge_program_manager = exir.to_edge(exir_program)
+    edge_program = to_edge_program(LinearModule(bias=True), input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = torch.randn((10, 32), dtype=torch.float32).detach().numpy()
+    np.random.seed(23)
+    input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program_manager.exported_program(), input_data=input_data)
+    convert_run_compare(edge_program, input_data=input_data)
+
 
 def test_linear_conversion__without_bias():
-    model = LinearModule(bias=False)
+    input_shape = (10, 32)
 
-    example_input = (torch.ones(10, 32),)
-    exir_program = torch.export.export(model, example_input)
-    edge_program_manager = exir.to_edge(exir_program)
+    edge_program = to_edge_program(LinearModule(bias=True), input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = torch.randn((10, 32), dtype=torch.float32).detach().numpy()
+    np.random.seed(23)
+    input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program_manager.exported_program(), input_data=input_data)
+    convert_run_compare(edge_program, input_data=input_data)

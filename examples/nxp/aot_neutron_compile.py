@@ -254,6 +254,6 @@ if __name__ == "__main__":
 
     # 7. Serialize to *.pte
     model_name = f"{args.model_name}" + (
-        "_arm_delegate" if args.delegate is True else ""
+        "_nxp_delegate" if args.delegate is True else ""
     )
     save_pte_program(exec_prog, model_name)

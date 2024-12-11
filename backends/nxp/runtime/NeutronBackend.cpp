@@ -23,6 +23,20 @@ namespace executor {
 #define BUFFER_ALIGNMENT 16
 #define ALIGN_SIZE(size) ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
 
+/* Header schema:
+   +----------------------------------+------------------------+---------------------------+
+   | Input TensorFormats length (1B)  | 1st tensor format (1B) | [nth* tensor format (1B)] |
+   +----------------------------------+------------------------+---------------------------+
+   | Output TensorFormats length (1B) | 1st tensor format (1B) | [nth* tensor format (1B)] |
+   +----------------------------------+------------------------+---------------------------+
+*/
+#define ITEM_SIZE 1                      // 1 Byte
+#define INPUT_TENSOR_FORMAT_LEN_POS 0
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + ITEM_SIZE)
+#define OUTPUT_TENSOR_FORMAT_LEN_POS(input_tensor_format_len) (input_tensor_format_len + ITEM_SIZE)
+#define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base, input_len) (base + input_len + 2*ITEM_SIZE)
+#define PAYLOAD_ADDR(base, numInputs, numOutputs) (base + ALIGN_SIZE(numInputs + numOutputs + 2* ITEM_SIZE))
+
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
     int numInputs = 0;
@@ -34,38 +48,40 @@ typedef struct {
     const uint8_t* outputTranspositionFlags;
 } NeutronConfig;
 
-// Applied on inputs.
-template <typename T>
-void transposeToChannelFirst(const T* src, T* dest, size_t N, size_t C, size_t H, size_t W) {
-  for (size_t i = 0; i < N; i++) {
-    for (size_t j = 0; j < C; j++) {
-      for (size_t k = 0; k < H; k++) {
-        for (size_t l = 0; l < W; l++) {
-          dest[i*C*H*W + j*H*W + k*W + l] = src[i*H*W*C + k*W*C + l*C + j];
-        }
-      }
-    }
-  }
-}
-
 // Applied on outputs.
 template <typename T>
-void transposeToChannelLast(const T* src, T* dest, size_t N, size_t C, size_t H, size_t W) {
-  for (size_t i = 0; i < N; i++) {
-    for (size_t j = 0; j < C; j++) {
-      for (size_t k = 0; k < H; k++) {
-        for (size_t l = 0; l < W; l++) {
-          dest[i*H*W*C + k*W*C + l*C + j] = src[i*C*H*W + j*H*W + k*W + l];
+void transposeToChannelFirst(const T* src, T* dest, size_t N, size_t C, size_t H, size_t W) {
+  for (size_t n = 0; n < N; n++) {
+    for (size_t c = 0; c < C; c++) {
+      for (size_t h = 0; h < H; h++) {
+        for (size_t w = 0; w < W; w++) {
+          dest[n*C*H*W + c*H*W + h*W + w] = src[n*H*W*C + h*W*C + w*C + c];
         }
       }
     }
   }
 }
 
+// Applied on inputs.
+template <typename T>
+void transposeToChannelLast(const T* src, T* dest, size_t N, size_t C, size_t H, size_t W) {
+  for (size_t n = 0; n < N; n++) {
+    for (size_t c = 0; c < C; c++) {
+      for (size_t h = 0; h < H; h++) {
+        for (size_t w = 0; w < W; w++) {
+          dest[n*H*W*C + h*W*C + w*C + c] = src[n*C*H*W + c*H*W + h*W + w];
+        }
+      }
+    }
+  }
+}
+
+// Transpose src buffer in channel first format into dest buffer in channel last format,
+// sizes correspond to src dimensions in the Executorch defined tensor (which is NCHW),
+// element_size is in Bytes.
 void transposeInput(const void* src, void* dest, const ArrayRef<exec_aten::SizesType>& sizes, size_t element_size) {
   size_t length = sizes.size();
   if (length < 3) {
-    // Transposition not defined, this should be handled by the AoT.
     return;
   }
   size_t N = 1;
@@ -87,10 +103,12 @@ void transposeInput(const void* src, void* dest, const ArrayRef<exec_aten::Sizes
   }
 }
 
+// Transpose src buffer in channel last format into dest buffer in channel first format,
+// sizes correspond to dest dimensions in the Executorch defined tensor (which is NCHW),
+// element_size is in Bytes.
 void transposeOutput(const void* src, void* dest, const ArrayRef<exec_aten::SizesType>& sizes, size_t element_size) {
   size_t length = sizes.size();
   if (length < 3) {
-    // Transposition not defined, this should be handled by the AoT.
     return;
   }
   size_t N = 1;
@@ -138,12 +156,12 @@ class NeutronBackend final : public PyTorchBackendInterface {
     //    cfg->mcfg.weights
     //    cfg->mcfg.kernels
     const uint8_t* transpositionFlags = static_cast<const uint8_t*>(processed->data());
-    uint32_t numInputs = transpositionFlags[0];
-    uint32_t numOutputs = transpositionFlags[numInputs+1];
-    cfg->inputTranspositionFlags = transpositionFlags + 1;
-    cfg->outputTranspositionFlags = transpositionFlags + 2 + numInputs;
+    uint32_t numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
+    uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS(numInputs)];
+    cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
+    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags, numInputs);
 
-    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>(transpositionFlags + ALIGN_SIZE(numInputs + numOutputs + 2)));
+    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags, numInputs, numOutputs));
     uint32_t magicWord = buffer[0];
     // Check valid microcode.
     if (magicWord != 0x64434D6E) {
@@ -205,6 +223,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Transpose inputs.
     for (int i = 0; i < cfg->numInputs; i++) {
       if (cfg->inputTranspositionFlags[i]) {
+        if (args[i]->toTensor().sizes().size() < 3) {
+          ET_LOG(Error, "Unable to transpose 1D and 2D input to channel last");
+          return Error::InvalidProgram;
+        }
         // Allocate buffer, the allocator is reset after each PTE instruction.
         void* buffer = context.allocate(args[i]->toTensor().nbytes());
         transposeInput(args[i]->toTensor().const_data_ptr(), buffer, args[i]->toTensor().sizes(), args[i]->toTensor().element_size());
@@ -234,6 +256,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Transpose outputs.
     for (int i = 0; i < cfg->numOutputs; i++) {
       if (cfg->outputTranspositionFlags[i]) {
+        if (args[cfg->numInputs + i]->toTensor().sizes().size() < 3) {
+          ET_LOG(Error, "Unable to transpose 1D and 2D output to channel first");
+          return Error::InvalidProgram;
+        }
         transposeOutput(cfg->dcfg.outputs[i],
                         args[cfg->numInputs + i]->toTensor().mutable_data_ptr(),
                         args[cfg->numInputs + i]->toTensor().sizes(),

@@ -9,9 +9,11 @@ import copy
 import numpy as np
 from torch.fx import Node
 
+from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import tf_lite_type_to_numpy, \
     create_channels_first_to_channels_last_permutation, apply_permutation_to
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import propagate_quantization, quantize_int8
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
@@ -19,6 +21,21 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 
 class ConstantPadNDConverter(NodeConverter):
+    supported_targets = [Target.RT700]
+
+    @staticmethod
+    def _is_supported_in_IR(node: Node) -> bool:
+        paddings = node.args[1]
+
+        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L38-L40
+        if len(paddings) > (input_rank(node, 0) * 2):
+            return False
+
+        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L30-L31
+        if len(paddings) % 2 != 0:
+            return False
+
+        return True
 
     # noinspection PyMethodMayBeStatic
     def _convert_paddings_to_tflite(self, paddings: Collection[int], input_tensor: tflite_model.Tensor) -> list[int]:
@@ -32,12 +49,6 @@ class ConstantPadNDConverter(NodeConverter):
         :param input_tensor: Main input tensor of the `aten.constant_pad_nd` operator.
         :return: The equivalent TFLite paddings.
         """
-
-        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L38-L40
-        assert len(paddings) <= (input_tensor.rank * 2), f'`aten.constant_pad_nd` has invalid paddings `{paddings}`.'
-
-        # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L30-L31
-        assert len(paddings) % 2 == 0, f'`aten.constant_pad_nd` has odd paddings `{paddings}`.'
 
         # 1st, group the individual paddings into groups of 2 (padding at the start and at the end for every dimension).
         paddings = np.array(paddings).reshape(-1, 2)
@@ -57,6 +68,7 @@ class ConstantPadNDConverter(NodeConverter):
 
     def convert(self, node: Node):
         """ Convert the `aten.constant_pad_nd` operator to TFLite `PadV2`. """
+        self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
 

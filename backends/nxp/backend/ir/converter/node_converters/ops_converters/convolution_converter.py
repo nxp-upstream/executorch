@@ -5,11 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import numpy as np
+import torch
 from torch.fx import Node
 
+from executorch.backends.nxp.backend.edge_helper import input_tensor, input_tensor_safe
 from executorch.backends.nxp.backend.ir.converter.conversion import common
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input, OpsList
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
 from executorch.backends.nxp.backend.ir.lib.tflite import Padding
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
@@ -18,6 +20,34 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 
 class ConvolutionConverter(NodeConverter):
+    supported_targets = [Target.RT700]
+
+    @staticmethod
+    def _is_supported_in_IR(node: Node) -> bool:
+        padding = node.args[4]
+        is_transposed = node.args[6]
+        output_padding = node.args[7]
+        groups = node.args[8]
+
+        if padding != [0, 0]:
+            return False
+
+        if is_transposed:
+            return False
+
+        if output_padding != [0, 0]:
+            return False
+
+        if groups != 1:
+            return False
+
+        if input_tensor_safe(node, 2) is None:
+            # No bias tensor.
+            weight_tensor = input_tensor(node, 1)
+            if weight_tensor.dtype not in [torch.float32, torch.int8, torch.uint8]:
+                return False
+
+        return True
 
     def _convert_2d_conv(self, stride, dilation, t_op: tflite_model.Operator) -> list[tflite_model.Operator]:
         t_op.builtin_options = conv_2d_options.Conv2D()
@@ -36,6 +66,7 @@ class ConvolutionConverter(NodeConverter):
             elif weight_tensor.type in [TensorType.INT8, TensorType.UINT8]:
                 bias_type = np.dtype(np.int32)
             else:
+                # Should never happen.
                 raise NotImplementedError(f"Convolution node with unsupported weight type: {weight_tensor.type}")
 
             bias_tensor = self.builder.create_zeros_tensor([output_channels], "zero_bias", bias_type, True)
@@ -62,20 +93,10 @@ class ConvolutionConverter(NodeConverter):
         return ops_list.flatten()
 
     def convert(self, node: Node):
-        x = node.args[0]
-        weight = node.args[1]
-        bias: Node | None = node.args[2]
-        stride = node.args[3]
-        padding = node.args[4]
-        dilation = node.args[5]
-        is_transposed = node.args[6]
-        output_padding = node.args[7]
-        groups = node.args[8]
+        self.assert_convertible(node)
 
-        assert padding == [0, 0], "'padding' attribute not yet supported"
-        assert not is_transposed, "'is_transposed' attribute not yet supported"
-        assert output_padding == [0, 0], "'output_padding' attribute not yet supported"
-        assert groups == 1, "'groups' attribute not yet supported"
+        stride = node.args[3]
+        dilation = node.args[5]
 
         t_op = self._create_tflite_op_with_io_tensors(node)
         ops_to_add = self._convert_2d_conv(stride, dilation, t_op)

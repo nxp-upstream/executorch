@@ -8,19 +8,27 @@ import numpy as np
 import torch
 from torch.fx import Node
 
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
 
 
 class QDQQuantizeConverter(NodeConverter):
+    supported_targets = [Target.RT700]
+
+    @staticmethod
+    def _is_supported_in_IR(node: Node) -> bool:
+        if "cluster" not in node.meta or \
+            node.args[5] != torch.int8:
+            return False
+
+        return True
 
     def convert(self, node: Node):
-        assert "cluster" in node.meta, "Attempt to convert Quantize node that is not part of the cluster!"
+        self.assert_convertible(node)
 
         from_tensor = self.builder.tensor_for_name(node.name)
         to_tensor = self.builder.tensor_for_name(node.args[0].name)
 
-        assert node.args[5] == torch.int8, "Only INT8 conversion is currently supported"
         scale = np.array(node.args[1], dtype=np.float32)
         zero_point = np.array(node.args[2], dtype=np.int8)
 

@@ -17,6 +17,7 @@ def test_linear_conversion__with_bias():
     convert_run_compare(edge_program, input_data=input_data)
 
 
+
 def test_linear_conversion__without_bias():
     input_shape = (10, 32)
     torch.manual_seed(23)

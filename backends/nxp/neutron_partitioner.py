@@ -15,6 +15,8 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
+from executorch.backends.nxp.backend.edge_program_converter import functions_converters
+from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -165,8 +167,8 @@ class QDQClusterRecognizer:
 
         for node in nodes:
             if (node.op == "call_function" and
-                    not self.is_quant_node(node) and
-                    not self.is_dequant_node(node)):
+                not self.is_quant_node(node) and
+                not self.is_dequant_node(node)):
                 cluster = self.get_qdq_cluster(node)
                 if cluster:
                     cluster_name = f"{node.name}_cluster"
@@ -191,8 +193,9 @@ NeutronSupportedOperatorsList = [
 
 class NeutronSupportedOperators(OperatorSupportBase):
 
-    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster]):
+    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster], target: Target):
         self.qdq_clusters = qdq_clusters
+        self.target = target
 
     def _is_node_quantized(self, node: torch.fx.node.Node):
         return "cluster" in node.meta
@@ -204,9 +207,17 @@ class NeutronSupportedOperators(OperatorSupportBase):
         """
         Operator checking function for compute nodes.
         """
-        return (self._is_node_call_function(node) and
-                self._is_node_quantized(node) and
-                node.target in NeutronSupportedOperatorsList)
+        if (node_converter := functions_converters.get(node.target, None)) is None:
+            # There is no `NodeConverter` for this `node`.
+            return False
+
+        return (
+            self._is_node_call_function(node) and
+            self._is_node_quantized(node) and
+
+            # TODO: `view_copy` node should be delegated only if it's not the only operator in the cluster.
+            node_converter.is_supported(node, self.target)
+        )
 
     def _is_node_supported_non_compute(self, node: torch.fx.node.Node) -> bool:
         """
@@ -222,8 +233,8 @@ class NeutronSupportedOperators(OperatorSupportBase):
         """
 
         if (QDQClusterRecognizer.is_quant_node(node) or
-                QDQClusterRecognizer.is_dequant_node(node) or
-                QDQClusterRecognizer.is_auxiliary_node(node)):
+            QDQClusterRecognizer.is_dequant_node(node) or
+            QDQClusterRecognizer.is_auxiliary_node(node)):
             return self._is_node_supported_non_compute(node)
         else:
             return self._is_node_supported_compute(node)
@@ -248,10 +259,12 @@ class NeutronPartitioner(Partitioner):
         qdq_clusterer.tag_qdq_clusters(nodes)
 
         graph_module.recompile()
+        target = self.delegation_spec[1][2].value
+        target = Target(target.decode())
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeutronSupportedOperators(qdq_clusterer.cluster_map),
+            NeutronSupportedOperators(qdq_clusterer.cluster_map, target),
             allows_single_node_partition=True,
         )
 

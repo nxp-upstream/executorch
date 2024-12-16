@@ -21,6 +21,10 @@ class Target(Enum):
     RT700 = 'rt700'
     IMX95 = 'imx95'
 
+    @classmethod
+    def values(cls) -> list[str]:
+        return [elt.value for elt in cls]
+
 
 class NodeConverter(ABC):
     """

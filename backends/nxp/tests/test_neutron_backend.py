@@ -8,6 +8,7 @@ import torch
 from torch.export import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOptions import BuiltinOptions
 from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
@@ -36,7 +37,7 @@ def test_neutron_backend__single_conv_model__payload_header():
 
 
 def test_neutron_backend__single_softmax_model__payload_header():
-    edge_program_manager = to_quantized_edge_program(SoftmaxModule(1), (1, 64))
+    edge_program_manager = to_quantized_edge_program(SoftmaxModule(1), (1, 64), target=Target.IGNORE)
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
     assert payload[0] == 0x1  # Single input
@@ -91,7 +92,7 @@ def test_conv_fc_softmax__lowered_program_and_tflite_output_match(mocker):
     input_shape = (1, 4, 5, 5)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, target=Target.IGNORE)
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

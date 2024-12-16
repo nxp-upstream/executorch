@@ -18,6 +18,18 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.exir.dialects._ops import ops as exir_ops
 
+# noinspection PyProtectedMember
+functions_converters = {
+    exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
+    exir_ops.edge.aten.addmm.default: AddMMConverter,
+    exir_ops.edge.aten.mm.default: MMConverter,
+    exir_ops.edge.aten._softmax.default: SoftmaxConverter,
+    exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
+    exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.max_pool2d.default: Maxpool2dConverter
+}
+
 
 class EdgeProgramToIRConverter:
     """
@@ -33,12 +45,12 @@ class EdgeProgramToIRConverter:
         :return: TFLite flatbuffers as bytes.
         """
         node_formats = NodeFormatInference(edge_program).identify_node_formats()
-        parameters_mapping = self._map_inputs_to_parameters(edge_program)
+        parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
-        cc = self._build_conversion_context(parameters_mapping, node_formats, conversion_config)
+        cc = self.build_conversion_context(parameters_mapping, node_formats, conversion_config)
 
         # Program conversion
-        self._append_placeholders_and_tensors(edge_program.graph.nodes, cc)
+        self.append_placeholders_and_tensors(edge_program.graph.nodes, cc)
         self._convert_qdq_cluster_q_dq_nodes(edge_program.graph.nodes, cc)
         self._process_nodes(edge_program.graph.nodes, cc)
 
@@ -52,7 +64,8 @@ class EdgeProgramToIRConverter:
 
         return bytes(flatbuffers_builder.Output()), io_formats
 
-    def _append_placeholders_and_tensors(self, nodes: list[Node], context: ConversionContext):
+    @staticmethod
+    def append_placeholders_and_tensors(nodes: list[Node], context: ConversionContext):
         for node in nodes:
             if node.op == "placeholder":
                 node_format = context.node_formats[node]
@@ -81,17 +94,6 @@ class EdgeProgramToIRConverter:
         :param nodes: Program's nodes.
         :param conversion_context: ConversionContext instance.
         """
-        # noinspection PyProtectedMember
-        functions_converters = {
-            exir_ops.edge.aten.convolution.default: ConvolutionConverter,
-            exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
-            exir_ops.edge.aten.addmm.default: AddMMConverter,
-            exir_ops.edge.aten.mm.default: MMConverter,
-            exir_ops.edge.aten._softmax.default: SoftmaxConverter,
-            exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
-            exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
-            exir_ops.edge.aten.max_pool2d.default: Maxpool2dConverter
-        }
 
         qdq_related_functions = [
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -108,7 +110,8 @@ class EdgeProgramToIRConverter:
                 else:
                     logger.e(logger.Code.NOT_IMPLEMENTED, f"Converter for '{node.target.__name__}' not implemented!")
 
-    def _map_inputs_to_parameters(self, edge_program: ExportedProgram) -> dict[str, Parameter]:
+    @staticmethod
+    def map_inputs_to_parameters(edge_program: ExportedProgram) -> dict[str, Parameter]:
         """
         Create mapping between program parameters (input nodes & static data nodes) and their names.
 
@@ -123,8 +126,8 @@ class EdgeProgramToIRConverter:
 
         return result_map
 
-    def _build_conversion_context(
-        self,
+    @staticmethod
+    def build_conversion_context(
         parameters_mapping: dict,
         node_formats: dict[Node, NodeFormat],
         conversion_config: ConversionConfig = ConversionConfig(),

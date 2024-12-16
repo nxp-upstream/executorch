@@ -105,7 +105,7 @@ class AtenModelBuilderDirector(ModelBuilder):
         for output_name in graph_signature.user_outputs:
             tensor = self.tensor_for_name(output_name)
             assert output_name == tensor.name, ("Program's output name doesn't match with tensor name in TFLite. "
-                                               "Output was probably redirected.")
+                                                "Output was probably redirected.")
             self.get_sub_graph().outputs.tmp_outputs.append(tensor)
 
             io_formats["outputs"][tensor.name] = tensor.tensor_format

@@ -112,3 +112,21 @@ def test_quantizer_softmax():
     assert scale == 1.0/256.0
     assert zp == -128
     assert dtype == torch.int8
+
+def test_quantizer_single_maxpool2d():
+    model = models.Maxpool2dModule()
+    model.eval()
+
+    example_input = (torch.ones(1, 4, 32, 32))
+    quantizer = NeutronQuantizer()
+    exir_program = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    m = prepare_pt2e(exir_program, quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+    # print(f"Quantized model: {m}")
+    nodes = list(m.graph.nodes)
+
+    assert len(nodes) == 3
+    assert nodes[1].name == "max_pool2d"
+    assert "quantization_annotation" not in nodes[1].meta

@@ -65,41 +65,6 @@ wgt_fc_qspec = QuantizationSpec(
 # Is set by the *PatternQuantizer directly.
 bias_qspec = None
 
-
-class MaxPoolPattern(QuantizationPattern):
-    """
-    Quantizer for MaxPool2D operator.
-
-    The quantization of maxpool is derived from the previous node quantization and the input and output shares the same
-    quantization parameters (scale and zero-point.
-    TODO (Robert): Essentially it is the same as executorch.backends.cadence.aot.quantizer.patterns.ReluPattern. There is an
-    option to unify the pattern matchers to ops sharing the Quantization spec.
-    """
-
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.MaxPool2d]
-
-    def get_anchors(
-            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
-    ) -> PartitionAnchors:
-        node = fused_partition[0].nodes[-1]
-        assert len(fused_partition[0].input_nodes) == 1
-        prev_node = fused_partition[0].input_nodes[0]
-
-        qspec = SharedQuantizationSpec(prev_node)
-
-        return PartitionAnchors(
-            inputs=[(node, 0)],
-            weights=[],
-            biases=[],
-            output=[(node, qspec), ],
-        )
-
-    def replacement_op(self):
-        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
-        assert False
-
-
 class SharedSpecPattern(QuantizationPattern):
     """
     Quantization pattern for shared quantization.
@@ -119,7 +84,7 @@ class SharedSpecPattern(QuantizationPattern):
         prev_node = fused_partition[0].input_nodes[0]
 
         # In the case of a node with shared quantization spec has no previous node, return None to not quantize the node
-        if 'quantization_annotation' not in prev_node.meta:
+        if not hasattr(prev_node, "meta") or "quantization_annotation" not in prev_node.meta:
             return None
         else:
             qspec = SharedQuantizationSpec(prev_node)
@@ -135,6 +100,13 @@ class SharedSpecPattern(QuantizationPattern):
         # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
         assert False
 
+class MaxPoolPattern(SharedSpecPattern):
+    """
+    Quantizer for MaxPool2D operator.
+    """
+
+    def partition_types(self):
+        return [torch.nn.MaxPool2d]
 
 class ConstPadNdPattern(SharedSpecPattern):
     """

@@ -7,6 +7,9 @@ from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfi
 from executorch.backends.nxp.tests.executors import convert_run_compare
 from executorch.backends.nxp.tests.models import SoftmaxModule, SoftmaxConvModule
 
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.seed()
 
 @pytest.mark.parametrize("input_shape,dim", [
     pytest.param((10,), -1, id="1D,dim=-1"),
@@ -24,7 +27,7 @@ def test_softmax_conversion__formatless_input(input_shape, dim):
     torch.manual_seed(23)
     input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
 
-    convert_run_compare(edge_program_manager.exported_program(), input_data=input_data, atol=5e-7)
+    convert_run_compare(edge_program_manager.exported_program(), input_data=input_data)
 
 
 @pytest.mark.parametrize("input_shape,dim", [

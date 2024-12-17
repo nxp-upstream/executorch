@@ -8,6 +8,9 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, t
 from executorch.backends.nxp.tests.models import ConstantPadNDModule, ConstantPadNDConvModule, Conv2dConstantPadNDModule
 from torch.export import ExportedProgram
 
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.seed()
 
 @pytest.mark.parametrize("constant", [0.0, 42., -13.37])
 def test_constant_pad_nd_conversion__specific_constant(constant):

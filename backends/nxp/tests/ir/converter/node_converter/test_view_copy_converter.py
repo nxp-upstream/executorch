@@ -13,6 +13,9 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, t
 from executorch.backends.nxp.tests.executors import convert_run_compare, ToNHWCPreprocess, ToNCHWPreprocess
 from torch.export import ExportedProgram
 
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.seed()
 
 class FormatlessToChannelsFirstModule(nn.Module):
     def __init__(self, channels: int, new_shape: Sequence[int]):

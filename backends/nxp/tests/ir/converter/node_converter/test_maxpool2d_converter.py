@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from executorch import exir
@@ -5,6 +6,10 @@ from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWP
 from executorch.backends.nxp.tests.models import Maxpool2dModule
 from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
+
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.seed()
 
 def test_maxpool2d_conversion():
     model = Maxpool2dModule()
@@ -27,4 +32,4 @@ def test_maxpool2d_conversion():
     input_data = torch.randn((1, 4, 32, 32), dtype=torch.float32).detach().numpy()
 
     convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=5e-7)
+                        tflite_output_preprocess=ToNCHWPreprocess())

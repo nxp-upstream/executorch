@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
@@ -7,6 +8,9 @@ from executorch.backends.nxp.tests.executors import convert_run_compare, ToNHWCP
 from executorch.backends.nxp.tests.models import Conv2dModule
 from torch.export import ExportedProgram
 
+@pytest.fixture(autouse=True)
+def reseed_model_per_test_run():
+    torch.seed()
 
 class Conv2dPermuteCopyModule(torch.nn.Module):
     def __init__(self, new_dims: tuple[int, ...]):

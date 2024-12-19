@@ -133,3 +133,13 @@ class Maxpool2dModule(torch.nn.Module):
 
     def forward(self, x):
         return self.maxpool2d(x)
+
+
+class ReLUModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.relu(x)

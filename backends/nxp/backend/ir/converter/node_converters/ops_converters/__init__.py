@@ -16,8 +16,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     ViewCopyConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.maxpool_2d_converter import \
     Maxpool2dConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import \
+    ReLUConverter
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
-    "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "Maxpool2dConverter"
+    "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
+    "Maxpool2dConverter"
 ]
 

@@ -154,6 +154,15 @@ class PermuteCopyPattern(SharedSpecPattern):
         return [torch.permute]
 
 
+class ReluPattern(SharedSpecPattern):
+    """
+    Quantizer for Relu operator. Shared quantization spec is selected, as ReLU usually follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.nn.modules.activation.ReLU]
+
+
 class ViewCopyPattern(SharedSpecPattern):
     """
     Quantizer for View_copy operator.
@@ -225,6 +234,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceGenericQuantizer(ViewCopyPattern(), static_qconfig),
                 CadenceGenericQuantizer(ConstPadNdPattern(), static_qconfig),
                 CadenceGenericQuantizer(PermuteCopyPattern(), static_qconfig),
+                CadenceGenericQuantizer(ReluPattern(), static_qconfig),
             ]
         )
 

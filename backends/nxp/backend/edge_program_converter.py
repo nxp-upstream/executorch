@@ -27,6 +27,7 @@ functions_converters = {
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.relu.default: ReLUConverter,
     exir_ops.edge.aten.max_pool2d.default: Maxpool2dConverter
 }
 

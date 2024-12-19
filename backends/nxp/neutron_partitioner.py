@@ -186,6 +186,7 @@ NeutronSupportedOperatorsList = [
     exir_ops.edge.aten.max_pool2d_with_indices.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.view_copy.default, # TODO: The view copy, is used as reshape. This shall be delegated only if the
                                           # the reshape is not the only operator in the cluster.
 ]

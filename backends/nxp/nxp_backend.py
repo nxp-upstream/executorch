@@ -183,11 +183,13 @@ class PayloadComposer:
         input and output tensor formats. Tensors are ordered based on graph signature
         of ExportedProgram. Header schema:
 
-        +----------------------------------+------------------------+---------------------------+
-        | Input TensorFormats length (1B)  | 1st tensor format (1B) | [nth* tensor format (1B)] |
-        +----------------------------------+------------------------+---------------------------+
-        | Output TensorFormats length (1B) | 1st tensor format (1B) | [nth* tensor format (1B)] |
-        +----------------------------------+------------------------+---------------------------+
+        +----------------------------------+-----------------------------------+
+        | Input TensorFormats length (1B)  | Output TensorFormats length (1B)  |
+        +----------------------------------+-----------------------------------+
+        | 1st input tensor format (1B)     | [nth* input tensor format (1B)]   |
+        +----------------------------------+-----------------------------------+
+        | 1st output tensor format (1B)    | [nth* output tensor format (1B)]  |
+        +----------------------------------+-----------------------------------+
 
         :param io_formats: IO tensors formats.
         :return: Bytes representation of payload header.
@@ -199,10 +201,11 @@ class PayloadComposer:
         assert len(outputs) < 256, "Models with more than 255 outputs are not supported."
 
         header_data = [len(inputs)]
+        header_data.append(len(outputs))
+
         for tensor, tensor_format in inputs.items():
             header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
 
-        header_data.append(len(outputs))
         for tensor, tensor_format in outputs.items():
             header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
 
@@ -240,8 +243,8 @@ class PayloadComposer:
         +----------------------------------------------------------------------------------------------------------------+
         |                                            16 bytes aligned blocks                                             |
         +===========================+===========================+============================+===========================+
-        | Input formats length (1B) | [nth* tensor format (1B)] | Output formats length (1B) | [nth* tensor format (1B)] |
-        +---------------------------+---------------------------+----------------------------+---------------------------+
+        | Input formats length (1B) | Output formats length (1B) | [nth* input format (1B)]  | [nth* output format (1B)] |
+        +---------------------------+--------------------------- +---------------------------+---------------------------+
         |                                                Neutron microcode                                               |
         +----------------------------------------------------------------------------------------------------------------+
         |                                                 Neutron weights                                                |

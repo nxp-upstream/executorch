@@ -135,6 +135,32 @@ class Maxpool2dModule(torch.nn.Module):
         return self.maxpool2d(x)
 
 
+class AvgPool2dModule(torch.nn.Module):
+    def __init__(self, count_include_pad, padding=0):
+        super().__init__()
+
+        self.avg_pool = torch.nn.AvgPool2d(
+            kernel_size=3, stride=2, padding=padding, count_include_pad=count_include_pad
+        )
+
+    def forward(self, x):
+        return self.avg_pool(x)
+
+
+class AvgPool2dConvModule(torch.nn.Module):
+    def __init__(self, count_include_pad, padding=0):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.avg_pool = torch.nn.AvgPool2d(
+            kernel_size=3, stride=1, padding=padding, count_include_pad=count_include_pad
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.avg_pool(x)
+
+
 class ReLUModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

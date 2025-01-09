@@ -184,9 +184,6 @@ class NeutronBackend final : public PyTorchBackendInterface {
     cfg->mcfg.weights = static_cast<const uint8_t*>(cfg->mcfg.microcode) + ALIGN_SIZE(microcodeSize);
     cfg->mcfg.kernels = static_cast<const uint8_t*>(cfg->mcfg.weights) + ALIGN_SIZE(weightsSize);
 
-    // Allocate place for input and output pointers.
-    cfg->dcfg.inputs = static_cast<const void**>(allocator->allocate(cfg->numInputs * sizeof(void*)));
-    cfg->dcfg.outputs = static_cast<void**>(allocator->allocate(cfg->numOutputs * sizeof(void*)));
 #if (NO_HEAP_USAGE == 0)
     // The driver allocates and deallocates place for NeutronModelHandle.
     cfg->nmh = NULL;
@@ -211,6 +208,10 @@ class NeutronBackend final : public PyTorchBackendInterface {
       EValue** args) const override {
     
     NeutronConfig *cfg = static_cast<NeutronConfig *>(input_handle);
+
+    // Allocate place for input and output pointers.
+    cfg->dcfg.inputs = static_cast<const void**>(context.allocate(cfg->numInputs * sizeof(void*)));
+    cfg->dcfg.outputs = static_cast<void**>(context.allocate(cfg->numOutputs * sizeof(void*)));
 
     // Set inputs and outputs from args.    
     for (int i = 0; i < cfg->numInputs; i++) {
@@ -242,9 +243,11 @@ class NeutronBackend final : public PyTorchBackendInterface {
       }
     }
 
+#ifdef NEUTRON_PROFILE
     // TODO: Use trace from BackendExecutionContext.
     NeutronTraceConfig trace_config{.traceConfig = 0};
     neutronSetTrace(cfg->nmh, &trace_config);
+#endif
 
     // Run neutron compute.
     NeutronError neutronRC = neutronRunBlocking(cfg->nmh, &cfg->dcfg);

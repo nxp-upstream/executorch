@@ -14,8 +14,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     SoftmaxConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import \
     ViewCopyConverter
-from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.maxpool_2d_converter import \
-    Maxpool2dConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.max_pool_2d_converter import \
+    MaxPool2dConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import \
     AvgPool2dConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import \
@@ -23,5 +23,5 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
-    "Maxpool2dConverter", "AvgPool2dConverter"
+    "MaxPool2dConverter", "AvgPool2dConverter"
 ]

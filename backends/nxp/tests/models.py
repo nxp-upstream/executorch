@@ -1,27 +1,28 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Collection
-
 import torch
+
+from typing import Collection, Union
 
 
 class Conv2dModule(torch.nn.Module):
     def __init__(self, bias: bool = True,
-                 dilation: int = 1,
+                 dilation: Union[int, tuple[int, int]] = 1,
                  in_channels: int = 4,
-                 kernel_size: int = 3,
+                 kernel_size: Union[int, tuple[int, int]] = 3,
                  out_channels: int = 8,
-                 stride: int = 2,
+                 padding: Union[str, int, Collection[int]] = 0,
+                 stride: Union[int, tuple[int, int]] = 2,
     ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
             in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-            bias=bias, stride=stride, dilation=dilation
+            stride=stride, padding=padding, dilation=dilation, bias=bias,
         )
 
     def forward(self, x):

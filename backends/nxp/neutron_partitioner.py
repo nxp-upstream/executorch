@@ -192,9 +192,10 @@ supported_ops = {
 
 class NeutronSupportedOperators(OperatorSupportBase):
 
-    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster], target: Target):
+    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster], target: Target, operators_not_to_delegate: List[str]):
         self.qdq_clusters = qdq_clusters
         self.target = target
+        self.operators_not_to_delegate = operators_not_to_delegate
 
     def _is_node_quantized(self, node: torch.fx.node.Node):
         return "cluster" in node.meta
@@ -202,10 +203,19 @@ class NeutronSupportedOperators(OperatorSupportBase):
     def _is_node_call_function(self, node: torch.fx.node.Node):
         return node.op == "call_function"
 
+    def is_node_delegatable(self, node: torch.fx.node.Node):
+        if self.operators_not_to_delegate != ['']:
+            any_non_delegatable = any(x in node.name for x in self.operators_not_to_delegate)
+            return not any_non_delegatable
+        return True
+
     def _is_node_supported_compute(self, node: torch.fx.node.Node) -> bool:
         """
         Operator checking function for compute nodes.
         """
+        if not self.is_node_delegatable(node):
+            return False
+
         if (node_converter := supported_ops.get(node.target, None)) is None:
             # There is no `NodeConverter` for this `node`.
             return False
@@ -261,9 +271,12 @@ class NeutronPartitioner(Partitioner):
         target = self.delegation_spec[1][2].value
         target = Target(target.decode())
 
+        operators_not_to_delegate = self.delegation_spec[1][3].value.decode().split(',')
+        logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
+
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeutronSupportedOperators(qdq_clusterer.cluster_map, target),
+            NeutronSupportedOperators(qdq_clusterer.cluster_map, target, operators_not_to_delegate),
             allows_single_node_partition=True,
         )
 

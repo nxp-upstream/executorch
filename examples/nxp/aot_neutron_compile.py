@@ -164,6 +164,14 @@ if __name__ == "__main__":
         default=False,
         help="Test the selected model and print the accuracy between 0 and 1.",
     )
+    parser.add_argument(
+        "--operators_not_to_delegate",
+        required=False,
+        default=[],
+        type=str,
+        nargs='*',
+        help="List of operators not to delegate. E.g., --operators_not_to_delegate aten::convolution aten::mm"
+    )
 
     args = parser.parse_args()
 
@@ -231,7 +239,8 @@ if __name__ == "__main__":
         edge_program = edge_program.to_backend(
             NeutronPartitioner(
                 generate_neutron_compile_spec(
-                    "rt700"
+                    "rt700",
+                    operators_not_to_delegate=args.operators_not_to_delegate
                 )
             )
         )

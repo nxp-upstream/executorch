@@ -17,6 +17,7 @@ import torch
 from torch.export.exported_program import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
 from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node, NeutronNodeArtifacts
@@ -27,6 +28,8 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 
 class NeutronCompileSpecBuilder:
+    config: Target
+
     def __init__(self):
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
@@ -41,9 +44,14 @@ class NeutronCompileSpecBuilder:
         Generate compile spec for Neutron NPU
 
         Args:
-            config: Neutron accelerator configuration, e.g. rt700
+            config: Neutron accelerator configuration, e.g. "rt700"
             extra_flags: Extra flags for the Neutron compiler
         """
+        try:
+            self.config = Target(config)
+        except ValueError:
+            raise ValueError(f'Config `{config}` is not a valid target. Must be one of `{Target.values()}`.')
+
         assert (
             self.output_format is None
         ), f"Output format already set to f{self.output_format}"
@@ -64,24 +72,21 @@ class NeutronCompileSpecBuilder:
             self.compile_spec += [
                 CompileSpec("output_format", "tflite".encode()),
                 CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
+                CompileSpec("target", self.config.value.encode())
             ]
 
         return self.compile_spec
 
 
 def generate_neutron_compile_spec(
-    config: str,
+    config: str,  # The target platform. For example "rt700".
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
-) -> List[CompileSpec]:
-    return (
-        NeutronCompileSpecBuilder()
-        .neutron_compile_spec(
-            config,
-            extra_flags=extra_flags,
-        )
-        .build()
-    )
+) -> list[CompileSpec]:
+    return NeutronCompileSpecBuilder().neutron_compile_spec(
+        config,
+        extra_flags=extra_flags,
+    ).build()
 
 
 @final

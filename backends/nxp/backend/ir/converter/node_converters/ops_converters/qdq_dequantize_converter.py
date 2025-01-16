@@ -8,20 +8,29 @@ import numpy as np
 from torch.fx import Node
 
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import torch_type_to_numpy_type
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
 
 
 class QDQDequantizeConverter(NodeConverter):
+    supported_targets = [Target.RT700]
+
+    @staticmethod
+    def _is_supported_in_IR(node: Node) -> bool:
+        zero_point_type = torch_type_to_numpy_type(node.args[5])
+        if "cluster" not in node.meta or \
+            zero_point_type not in [np.int8, np.int32]:
+            return False
+
+        return True
 
     def convert(self, node: Node):
-        assert "cluster" in node.meta, "Attempt to convert Dequantize node that is not part of the cluster!"
+        self.assert_convertible(node)
 
         from_tensor = self.builder.tensor_for_name(node.name)
         to_tensor = self.builder.tensor_for_name(node.args[0].name)
 
         zero_point_type = torch_type_to_numpy_type(node.args[5])
-        assert zero_point_type in [np.int8, np.int32], "Only INT8/INT32 conversion is currently supported"
 
         scale = np.array(node.args[1], dtype=np.float32)
         zero_point = np.array(node.args[2], dtype=zero_point_type)

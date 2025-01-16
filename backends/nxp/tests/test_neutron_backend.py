@@ -8,6 +8,7 @@ import torch
 from torch.export import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOptions import BuiltinOptions
 from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
@@ -22,27 +23,29 @@ def test_neutron_backend__single_conv_model():
     lowered_module = edge_program_manager.exported_program().graph_module.lowered_module_0
     assert len(lowered_module.processed_bytes) != 0  # The Neutron microcode, weights and kernels have been written here
 
+
 def test_neutron_backend__single_conv_model__payload_header():
     edge_program_manager = to_quantized_edge_program(Conv2dModule(bias=False), (1, 4, 32, 32))
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
-    assert payload[0] == 0x1 # Single input
-    assert payload[1] == 0x1 # Channels last
-    assert payload[2] == 0x1 # Single output
-    assert payload[3] == 0x1 # Channels last
-    assert all(byte == 0x0 for byte in payload[4:16]) # Aligned to 16 bytes
-    assert payload[17] != 0x0 # Followed by non-zero content
+    assert payload[0] == 0x1  # Single input
+    assert payload[1] == 0x1  # Channels last
+    assert payload[2] == 0x1  # Single output
+    assert payload[3] == 0x1  # Channels last
+    assert all(byte == 0x0 for byte in payload[4:16])  # Aligned to 16 bytes
+    assert payload[17] != 0x0  # Followed by non-zero content
+
 
 def test_neutron_backend__single_softmax_model__payload_header():
-    edge_program_manager = to_quantized_edge_program(SoftmaxModule(1), (1, 64))
+    edge_program_manager = to_quantized_edge_program(SoftmaxModule(1), (1, 64), target=Target.IGNORE)
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
-    assert payload[0] == 0x1 # Single input
-    assert payload[1] == 0x0 # Formatless
-    assert payload[2] == 0x1 # Single output
-    assert payload[3] == 0x0 # Formatless
-    assert all(byte == 0x0 for byte in payload[4:16]) # Aligned to 16 bytes
-    assert payload[17] != 0x0 # Followed by non-zero content
+    assert payload[0] == 0x1  # Single input
+    assert payload[1] == 0x0  # Formatless
+    assert payload[2] == 0x1  # Single output
+    assert payload[3] == 0x0  # Formatless
+    assert all(byte == 0x0 for byte in payload[4:16])  # Aligned to 16 bytes
+    assert payload[17] != 0x0  # Followed by non-zero content
 
 
 def test_lowered_program_and_tflite_output_match__conv2d__no_bias(mocker):
@@ -89,7 +92,7 @@ def test_conv_fc_softmax__lowered_program_and_tflite_output_match(mocker):
     input_shape = (1, 4, 5, 5)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, input_shape, target=Target.IGNORE)
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]

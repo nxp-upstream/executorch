@@ -21,7 +21,7 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
     return m
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple) -> EdgeProgramManager:
+def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, target="rt700") -> EdgeProgramManager:
     calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
     example_input = (torch.ones(*input_shape),)
 
@@ -29,7 +29,7 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple) -> Edg
     exir_program_aten_quant = _quantize_model(exir_program_aten, calibration_inputs)
     edge_program_manager = export_to_edge(exir_program_aten_quant, example_input)
 
-    partitioner = NeutronPartitioner(generate_neutron_compile_spec("rt700"))
+    partitioner = NeutronPartitioner(generate_neutron_compile_spec(target))
 
     edge_program_manager = edge_program_manager.to_backend(partitioner)
     return edge_program_manager

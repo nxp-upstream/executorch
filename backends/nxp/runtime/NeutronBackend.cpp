@@ -36,8 +36,8 @@ namespace executor {
 #define INPUT_TENSOR_FORMAT_LEN_POS 0
 #define OUTPUT_TENSOR_FORMAT_LEN_POS 1
 #define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 2 * ITEM_SIZE)
-#define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base, input_len) (base + 2 * ITEM_SIZE + input_len)
-#define PAYLOAD_ADDR(base, numInputs, numOutputs) (base + ALIGN_SIZE(2 * ITEM_SIZE + numInputs + numOutputs))
+#define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base) (base + ALIGN_SIZE(2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS] + base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
@@ -161,9 +161,9 @@ class NeutronBackend final : public PyTorchBackendInterface {
     uint32_t numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
     uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
     cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
-    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags, numInputs);
+    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
 
-    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags, numInputs, numOutputs));
+    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags));
     uint32_t magicWord = buffer[0];
     // Check valid microcode.
     if (magicWord != 0x64434D6E) {

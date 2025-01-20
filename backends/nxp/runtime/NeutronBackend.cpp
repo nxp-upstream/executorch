@@ -24,18 +24,20 @@ namespace executor {
 #define ALIGN_SIZE(size) ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
 
 /* Header schema:
-   +----------------------------------+------------------------+---------------------------+
-   | Input TensorFormats length (1B)  | 1st tensor format (1B) | [nth* tensor format (1B)] |
-   +----------------------------------+------------------------+---------------------------+
-   | Output TensorFormats length (1B) | 1st tensor format (1B) | [nth* tensor format (1B)] |
-   +----------------------------------+------------------------+---------------------------+
+        +----------------------------------+-----------------------------------+
+        | Input TensorFormats length (1B)  | Output TensorFormats length (1B)  |
+        +----------------------------------+-----------------------------------+
+        | 1st input tensor format (1B)     | [nth* input tensor format (1B)]   |
+        +----------------------------------+-----------------------------------+
+        | 1st output tensor format (1B)    | [nth* output tensor format (1B)]  |
+        +----------------------------------+-----------------------------------+
 */
 #define ITEM_SIZE 1                      // 1 Byte
 #define INPUT_TENSOR_FORMAT_LEN_POS 0
-#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + ITEM_SIZE)
-#define OUTPUT_TENSOR_FORMAT_LEN_POS(input_tensor_format_len) (input_tensor_format_len + ITEM_SIZE)
-#define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base, input_len) (base + input_len + 2*ITEM_SIZE)
-#define PAYLOAD_ADDR(base, numInputs, numOutputs) (base + ALIGN_SIZE(numInputs + numOutputs + 2* ITEM_SIZE))
+#define OUTPUT_TENSOR_FORMAT_LEN_POS 1
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 2 * ITEM_SIZE)
+#define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base) (base + ALIGN_SIZE(2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS] + base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
@@ -157,11 +159,11 @@ class NeutronBackend final : public PyTorchBackendInterface {
     //    cfg->mcfg.kernels
     const uint8_t* transpositionFlags = static_cast<const uint8_t*>(processed->data());
     uint32_t numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
-    uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS(numInputs)];
+    uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
     cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
-    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags, numInputs);
+    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
 
-    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags, numInputs, numOutputs));
+    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags));
     uint32_t magicWord = buffer[0];
     // Check valid microcode.
     if (magicWord != 0x64434D6E) {

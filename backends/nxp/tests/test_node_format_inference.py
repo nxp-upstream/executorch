@@ -9,7 +9,7 @@ import torch
 from executorch import exir
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.backends.nxp.tests.models import Conv2dModule, SoftmaxModule, Maxpool2dModule
-from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
+from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 def test_convolution():

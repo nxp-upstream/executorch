@@ -21,7 +21,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
 from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node, NeutronNodeArtifacts
-from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
+from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier

@@ -21,8 +21,8 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
-from executorch.examples.portable.utils import export_to_edge, save_pte_program
 from executorch.exir import ExecutorchBackendConfig
+from executorch.extension.export_util import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)

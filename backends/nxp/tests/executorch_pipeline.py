@@ -6,7 +6,7 @@ from executorch import exir
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.examples.portable import export_to_edge
+from executorch.extension.export_util.utils import export_to_edge
 from executorch.exir import EdgeProgramManager, ExecutorchBackendConfig, ExecutorchProgramManager
 
 

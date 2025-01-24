@@ -125,10 +125,10 @@ class NeutronBackend(BackendDetails):
         if output_format == "tflite":
             # We need to create custom model verifier with max_pool2d added as exception.
             # Otherwise, we get violation that this op is not part of ATen Core ops.
-            edge_program._verifier = EXIREdgeDialectVerifier(
+            edge_program._verifiers = [EXIREdgeDialectVerifier(
                 class_only=True,
                 exception_list=[torch.ops.aten.max_pool2d.default]
-            )
+            )]
 
             # Remove MaxPool-related "getitem" nodes from graph
             edge_program = XNNPACKPassManager(edge_program, [RemoveGetItemPass]).transform()

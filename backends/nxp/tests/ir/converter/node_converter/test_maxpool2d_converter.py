@@ -5,7 +5,7 @@ from executorch import exir
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWPreprocess, ToNHWCPreprocess
 from executorch.backends.nxp.tests.models import Maxpool2dModule
-from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
+from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 import pytest
 

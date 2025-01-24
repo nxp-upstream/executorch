@@ -11,16 +11,59 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
+
 #include <memory>
+#include <mutex>
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace backends {
 
-class XnnpackBackend final : public PyTorchBackendInterface {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
+
+class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~XnnpackBackend() = default;
+
+  XnnpackBackend() {
+    // Initialize XNNPACK
+    xnn_status status = xnn_initialize(/*allocator=*/nullptr);
+    if (status != xnn_status_success) {
+      ET_LOG(
+          Error,
+          "Failed to initialize, XNNPACK status: 0x%x",
+          (unsigned int)status);
+      return;
+    }
+
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+    // Create a workspace for the XNNExecutor to use. This workspace will be
+    // shared across all delegate instances.
+    ET_LOG(Debug, "Creating XNN workspace");
+    xnn_workspace_t workspace = nullptr;
+    status = xnn_create_workspace(&workspace);
+    if (status != xnn_status_success) {
+      ET_LOG(
+          Error,
+          "Failed to create XNN workspace, XNNPACK status: 0x%x",
+          (unsigned int)status);
+      workspace = nullptr;
+      return;
+    }
+    workspace_.reset(workspace);
+    ET_LOG(Debug, "Created XNN workspace: %p", workspace_.get());
+#endif // ENABLE_XNNPACK_SHARED_WORKSPACE
+  }
 
   bool is_available() const override {
     return xnn_status_success == xnn_initialize(/*allocator=*/nullptr);
@@ -38,12 +81,12 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     // new and since this type is not trivially destructible, we must call the
     // destructor manually in destroy().
     new (executor) xnnpack::delegate::XNNExecutor;
-
     Error err = xnnpack::delegate::XNNCompiler::compileModel(
         processed->data(),
         processed->size(),
         executor,
-        context.get_runtime_allocator());
+        context.get_runtime_allocator(),
+        workspace_.get());
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -65,6 +108,10 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+    const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
+
     // Prepare Inputs/Outputs and Propagate Input Shapes
     Error err = executor->prepare_args(args);
     if (err != Error::Ok) {
@@ -85,6 +132,12 @@ class XnnpackBackend final : public PyTorchBackendInterface {
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+      // This is needed to serialize access to xnn_delete_runtime which is not
+      // thread safe. This can heppen when multiple threads call destroy() on
+      // the same backend instance.
+      const std::lock_guard<std::mutex> lock(workspace_mutex_);
+#endif
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 #ifdef ENABLE_XNNPACK_PROFILING
       executor->print_avg_op_timings();
@@ -94,6 +147,13 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       executor->~XNNExecutor();
     }
   }
+
+ private:
+  // This is a global workspace for all delegate instances.
+  mutable std::mutex workspace_mutex_;
+  std::unique_ptr<xnn_workspace, decltype(&xnn_release_workspace)> workspace_{
+      nullptr,
+      &xnn_release_workspace};
 };
 
 namespace {
@@ -102,5 +162,5 @@ Backend backend{"XnnpackBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
 
-} // namespace executor
-} // namespace torch
+} // namespace backends
+} // namespace executorch

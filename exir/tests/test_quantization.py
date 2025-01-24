@@ -51,14 +51,14 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()
             m_copy = copy.deepcopy(m)
             # program capture
-            m = torch._export.capture_pre_autograd_graph(
+            m = torch.export.export_for_training(
                 m, copy.deepcopy(example_inputs)
-            )
+            ).module()
 
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)
             quantizer.set_global(operator_config)
-            m = prepare_pt2e(m, quantizer)
+            m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
             self.assertEqual(
                 id(m.activation_post_process_3), id(m.activation_post_process_2)
             )

@@ -6,7 +6,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(arm_executor_runner)
 
-if(NOT DEFINED ET_PTE_FILE_PATH)
+option(SEMIHOSTING "Enable semihosting" OFF)
+option(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size" OFF)
+option(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE "Set ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE to specify temp alloction pool size" OFF)
+
+
+if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
     FATAL_ERROR
       "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
@@ -14,7 +19,7 @@ if(NOT DEFINED ET_PTE_FILE_PATH)
   )
 endif()
 
-option(SEMIHOSTING "Enable semihosting" OFF)
+set(TARGET_BOARD "corstone-300" CACHE STRING "Target board")
 
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH
@@ -34,7 +39,7 @@ set(ET_PTE_FILE_PATH
     CACHE PATH "Path to ExecuTorch model pte"
 )
 set(ETHOS_SDK_PATH
-    "../ethos-u-scratch/ethos-u"
+    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
     CACHE PATH "Path to Ethos-U bare metal driver/env"
 )
 set(PYTHON_EXECUTABLE
@@ -45,18 +50,95 @@ set(PYTHON_EXECUTABLE
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
 get_filename_component(ET_INCLUDE_PATH ${ET_INCLUDE_PATH} REALPATH)
-get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
 get_filename_component(ETHOS_SDK_PATH ${ETHOS_SDK_PATH} REALPATH)
+if(NOT ${SEMIHOSTING})
+  get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
+endif()
 
 # Dependencies from the Ethos-U Core This is the platform target of
 # Corstone-300, that includes ethosu_core_driver and bare-metal bringup
 # libraries. We link against ethosu_target_init which includes all of these
 # dependencies.
 
-# For Corstone-300 FVP builds we put models into the larger DRAM area
-set(MEMORY_MODEL "dram")
-set(MEMORY_ARENA "dram")
-add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+if(TARGET_BOARD STREQUAL "corstone-300")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
+      # Configure NPU architecture timing adapters
+      # Ethos_U55_High_End_Embedded
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=8
+      ETHOSU_TA_MAXW_0=8
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=32
+      ETHOSU_TA_WLATENCY_0=32
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # Flash
+      ETHOSU_TA_MAXR_1=2
+      ETHOSU_TA_MAXW_1=0
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=64
+      ETHOSU_TA_WLATENCY_1=0
+      ETHOSU_TA_PULSE_ON_1=320
+      ETHOSU_TA_PULSE_OFF_1=80
+      ETHOSU_TA_BWCAP_1=50
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
+elseif(TARGET_BOARD STREQUAL "corstone-320")
+  add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-320 target)
+  target_compile_definitions(ethosu_target_common INTERFACE
+      # ETHOSU_MODEL=0 place pte file/data in SRAM area
+      # ETHOSU_MODEL=1 place pte file/data in DDR area
+      ETHOSU_MODEL=1
+      # Configure NPU architecture timing adapters
+      # Ethos_U85_SYS_DRAM_Mid
+      # This is just example numbers and you should make this match your hardware
+      # SRAM
+      ETHOSU_TA_MAXR_0=8
+      ETHOSU_TA_MAXW_0=8
+      ETHOSU_TA_MAXRW_0=0
+      ETHOSU_TA_RLATENCY_0=32
+      ETHOSU_TA_WLATENCY_0=32
+      ETHOSU_TA_PULSE_ON_0=3999
+      ETHOSU_TA_PULSE_OFF_0=1
+      ETHOSU_TA_BWCAP_0=4000
+      ETHOSU_TA_PERFCTRL_0=0
+      ETHOSU_TA_PERFCNT_0=0
+      ETHOSU_TA_MODE_0=1
+      ETHOSU_TA_HISTBIN_0=0
+      ETHOSU_TA_HISTCNT_0=0
+      # DRAM
+      ETHOSU_TA_MAXR_1=64
+      ETHOSU_TA_MAXW_1=32
+      ETHOSU_TA_MAXRW_1=0
+      ETHOSU_TA_RLATENCY_1=500
+      ETHOSU_TA_WLATENCY_1=250
+      ETHOSU_TA_PULSE_ON_1=4000
+      ETHOSU_TA_PULSE_OFF_1=1000
+      ETHOSU_TA_BWCAP_1=3750
+      ETHOSU_TA_PERFCTRL_1=0
+      ETHOSU_TA_PERFCNT_1=0
+      ETHOSU_TA_MODE_1=1
+      ETHOSU_TA_HISTBIN_1=0
+      ETHOSU_TA_HISTCNT_1=0
+      )
+else()
+  message(FATAL_ERROR "Unsupported TARGET_BOARD: ${TARGET_BOARD}")
+endif()
 
 # Dependencies from the ExecuTorch build
 add_library(executorch STATIC IMPORTED)
@@ -65,12 +147,12 @@ set_property(
                              "${ET_BUILD_DIR_PATH}/libexecutorch.a"
 )
 
-add_library(executorch_no_prim_ops STATIC IMPORTED)
+add_library(executorch_core STATIC IMPORTED)
 set_property(
-  TARGET executorch_no_prim_ops
-  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_no_prim_ops.a"
+  TARGET executorch_core
+  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_core.a"
 )
-target_link_libraries(executorch INTERFACE executorch_no_prim_ops)
+target_link_libraries(executorch INTERFACE executorch_core)
 
 add_library(executorch_delegate_ethos_u STATIC IMPORTED)
 set_property(
@@ -114,22 +196,26 @@ set_property(
 )
 
 # Convert pte to header
-add_custom_target(
-  gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-)
+if(NOT ${SEMIHOSTING})
+  add_custom_target(
+    gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+  )
 
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-  COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte
-          ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS ${ET_PTE_FILE_PATH}
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte
+            ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${ET_PTE_FILE_PATH}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  )
+endif()
 
 # The arm_executor_runner executable
 add_executable(arm_executor_runner)
 
-target_sources(arm_executor_runner PRIVATE arm_executor_runner.cpp)
+target_sources(
+  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
+)
 
 # Include the target's bare-metal linker script
 ethosu_eval_link_options(arm_executor_runner)
@@ -148,6 +234,7 @@ target_link_libraries(
   quantized_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
+  -Xlinker -Map=arm_executor_runner.map
 )
 
 # ET headers and generated headers includes
@@ -155,17 +242,25 @@ target_include_directories(
   arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-add_dependencies(arm_executor_runner gen_model_header)
-
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
+else()
+  add_dependencies(arm_executor_runner gen_model_header)
+endif()
+
+if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE})
+endif()
+
+if(ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_TEMP_ALLOCATOR_POOL_SIZE})
 endif()
 
 # Fixup compilation of retarget.c
 if(SEMIHOSTING)
   # Remove this when MLBEDSW-8910 is closed.
   set_source_files_properties(
-    ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300/retarget.c
+    ${ETHOS_SDK_PATH}/core_platform/targets/${TARGET_BOARD}/retarget.c
     PROPERTIES HEADER_FILE_ONLY TRUE
   )
 endif()

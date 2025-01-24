@@ -23,17 +23,20 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
 )
+from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
     Bool,
     DelegateCall,
+    Double,
     EValue,
     ExecutionPlan,
     Int,
@@ -108,7 +111,7 @@ class TestEmit(unittest.TestCase):
         value = typing.cast(schema.Tensor, values[value_index].val)
         self.assertIsInstance(value, schema.Tensor)
 
-        self.assertEqual(value.constant_buffer_idx, exp_buffer_idx)
+        self.assertEqual(value.data_buffer_idx, exp_buffer_idx)
 
         if not value.allocation_info:
             self.assertIsNone(exp_mem_id)
@@ -337,10 +340,8 @@ class TestEmit(unittest.TestCase):
         exir.print_program.pretty_print(program)
 
         deboxed_int_list = []
-        for item in program.execution_plan[0].values[5].val.items:  # pyre-ignore[16]
-            deboxed_int_list.append(
-                program.execution_plan[0].values[item].val.int_val  # pyre-ignore[16]
-            )
+        for item in program.execution_plan[0].values[5].val.items:
+            deboxed_int_list.append(program.execution_plan[0].values[item].val.int_val)
 
         self.assertEqual(IntList(deboxed_int_list), IntList([2, 0, 1]))
 
@@ -456,11 +457,7 @@ class TestEmit(unittest.TestCase):
         # Check the mul operator's stack trace contains f -> g -> h
         self.assertTrue(
             "return torch.mul(x, torch.randn(3, 2))"
-            in program.execution_plan[0]  # pyre-ignore[16]
-            .chains[0]
-            .stacktrace[1]
-            .items[-1]
-            .context
+            in program.execution_plan[0].chains[0].stacktrace[1].items[-1].context
         )
         self.assertEqual(
             program.execution_plan[0].chains[0].stacktrace[1].items[-1].name, "f"
@@ -613,11 +610,7 @@ class TestEmit(unittest.TestCase):
             if not isinstance(inst.instr_args, KernelCall):
                 continue
 
-            op = (
-                program.execution_plan[0]
-                .operators[inst.instr_args.op_index]  # pyre-ignore[16]
-                .name
-            )
+            op = program.execution_plan[0].operators[inst.instr_args.op_index].name
 
             if "mm" in op:
                 num_mm += 1
@@ -654,19 +647,13 @@ class TestEmit(unittest.TestCase):
         # generate the tensor on which this iteration will operate on.
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[0]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[0].instr_args.op_index
             ].name,
             "aten::sym_size",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[1]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[1].instr_args.op_index
             ].name,
             "aten::select_copy",
         )
@@ -678,28 +665,19 @@ class TestEmit(unittest.TestCase):
         # We check here that both of these have been generated.
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-5]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-5].instr_args.op_index
             ].name,
             "executorch_prim::et_copy_index",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-4]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-4].instr_args.op_index
             ].name,
             "executorch_prim::add",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-3]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-3].instr_args.op_index
             ].name,
             "executorch_prim::eq",
         )
@@ -713,13 +691,47 @@ class TestEmit(unittest.TestCase):
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0]  # pyre-ignore[16]
-                .chains[0]
-                .instructions[-1]
-                .instr_args.op_index
+                program.execution_plan[0].chains[0].instructions[-1].instr_args.op_index
             ].name,
             "executorch_prim::sub",
         )
+
+    def test_load_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
+    def test_run_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        buffer = module.to_executorch().buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+        outputs = loaded_model(inputs)[0]
+        torch.allclose(outputs, f(*inputs))
 
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
@@ -770,7 +782,46 @@ class TestEmit(unittest.TestCase):
                     self.assertTrue(weight_tensor.dim_order == weight_dim_order)
         self.assertTrue(addmm_found)
 
-    # cant compare plans directly with __eq__ because of the plan names, and constant_buffer_idx in tensor values
+    def test_non_const_buffer_sizes(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                b = 3 + 1
+                return x + b
+
+        f = Add()
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        edge_program_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_program_manager.exported_program()
+        )
+        non_const_buffer_size_with_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        non_const_buffer_size_without_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+        self.assertTrue(
+            non_const_buffer_size_with_const_prop_pass[1]
+            < non_const_buffer_size_without_const_prop_pass[1]
+        )
+
+    # cant compare plans directly with __eq__ because of the plan names, and data_buffer_idx in tensor values
     def _compare_execution_plans(
         self, plan_single: ExecutionPlan, plan_merged: ExecutionPlan
     ) -> None:
@@ -1066,7 +1117,6 @@ class TestEmit(unittest.TestCase):
         config = exir.ExecutorchBackendConfig(
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
                 # allow_lifetime_and_storage_overlap: bool = False,
                 alloc_graph_input=True,
                 alloc_graph_output=False,
@@ -1222,9 +1272,7 @@ class TestEmit(unittest.TestCase):
         # this triggers the actual emission of the graph
         program = program_mul._emitter_output.program
         node = None
-        program.execution_plan[0].chains[0].instructions[  # pyre-ignore[16]
-            0
-        ].instr_args.op_index
+        program.execution_plan[0].chains[0].instructions[0].instr_args.op_index
 
         # Find the multiplication node in the graph that was emitted.
         for node in program_mul.exported_program().graph.nodes:
@@ -1236,7 +1284,7 @@ class TestEmit(unittest.TestCase):
         # Find the multiplication instruction in the program that was emitted.
         for idx in range(len(program.execution_plan[0].chains[0].instructions)):
             instruction = program.execution_plan[0].chains[0].instructions[idx]
-            op_index = instruction.instr_args.op_index  # pyre-ignore[16]
+            op_index = instruction.instr_args.op_index
             if "mul" in program.execution_plan[0].operators[op_index].name:
                 break
 
@@ -1375,9 +1423,7 @@ class TestEmit(unittest.TestCase):
         exec_prog._emitter_output.program
         self.assertIsNotNone(exec_prog.delegate_map)
         self.assertIsNotNone(exec_prog.delegate_map.get("forward"))
-        self.assertIsNotNone(
-            exec_prog.delegate_map.get("forward").get(0)  # pyre-ignore[16]
-        )
+        self.assertIsNotNone(exec_prog.delegate_map.get("forward").get(0))
         self.assertEqual(
             exec_prog.delegate_map.get("forward").get(0).get("name"),
             "BackendWithCompilerExample",
@@ -1490,9 +1536,7 @@ class TestEmit(unittest.TestCase):
         model = model.to_executorch()
         model.dump_executorch_program(True)
         self.assertTrue(
-            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
-            .values[0]
-            .val.allocation_info
+            model.executorch_program.execution_plan[0].values[0].val.allocation_info
             is not None
         )
         executorch_module = _load_for_executorch_from_buffer(model.buffer)
@@ -1527,19 +1571,92 @@ class TestEmit(unittest.TestCase):
         )
         model = model.to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
         model.dump_executorch_program(True)
         self.assertTrue(
-            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
-            .values[0]
-            .val.allocation_info
+            model.executorch_program.execution_plan[0].values[0].val.allocation_info
             is not None
         )
         executorch_module = _load_for_executorch_from_buffer(model.buffer)
         self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1))
         self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1) + 1)
+
+    def test_infinity_in_model(self) -> None:
+        class InfinityMaskModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mask = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
+
+            def forward(self, x):
+                masked_weights = x.masked_fill(self.mask == 0, float("-inf"))
+                return masked_weights
+
+        model = to_edge(
+            export(
+                InfinityMaskModel(),
+                (torch.randn(2, 2),),
+            )
+        )
+
+        # Confirm that we can serialize the model with infinity in it.
+        model = model.to_executorch()
+
+        # Assert that the infinity is stored as a string "-inf".
+        values = model.executorch_program.execution_plan[0].values
+        self.assertEqual(values[5].val, Double(double_val=float("-inf")))
+
+        # Confirm that we can also deserialize the model with infinity in it.
+        pte_data = deserialize_pte_binary(model.buffer)
+        self.assertEqual(
+            pte_data.execution_plan, model.executorch_program.execution_plan
+        )
+
+    def test_mutate_input_tensor(self) -> None:
+        class MutateInputTensorModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x.add_(1)
+
+        model = to_edge(
+            export(MutateInputTensorModule(), (torch.zeros(1),))
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False)
+            )
+        )
+        executorch_model = _load_for_executorch_from_buffer(model.buffer)
+        input = torch.zeros(1)
+        executorch_model(input)
+        self.assertEqual(input, torch.ones(1))
+
+    def test_constant_tagged_tensors(self) -> None:
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        model = to_edge(export(LinearModule(), (torch.ones(5, 5),))).to_executorch(
+            config=ExecutorchBackendConfig(
+                external_constants=True,
+            )
+        )
+        emitter_output = model._emitter_output
+        # Check that constant_buffer is empty besides the non-constant placeholder 0.
+        self.assertEqual(len(emitter_output.program.constant_buffer), 1)
+        # Check that constant weights are in the external constant buffer.
+        self.assertEqual(len(emitter_output.external_constant_buffer), 2)
+        # Setting external_constants=True, saves all constants to the key
+        # '_default_external_constant'.
+        external_map = emitter_output.external_constant_map[
+            "_default_external_constant"
+        ]
+        self.assertEqual(external_map["linear.weight"], 0)
+        self.assertEqual(external_map["linear.bias"], 1)

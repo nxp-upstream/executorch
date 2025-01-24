@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -43,7 +45,10 @@ class LayerNormVisitor(NodeVisitor):
             len(normalized_shapes) != 1
             and normalized_shapes[0] != input_tensor.shape[-1]
         ):
-            print("Only supports normalization with last input dimension")
+            warnings.warn(
+                "[QNN Delegate Op Builder]: Only supports normalization with last input dimension.",
+                stacklevel=1,
+            )
             return
         axis = [len(input_tensor.shape) - 1]
         axis_shape = [len(axis)]
@@ -91,7 +96,7 @@ class LayerNormVisitor(NodeVisitor):
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(epsilon)},
+            {QCOM_DATA: np.float32(epsilon)},
         )
         layer_norm_op.AddTensorParam(
             OpLayerNorm.param_axes,

@@ -11,27 +11,57 @@
  */
 
 #include <cstring>
+#include <memory>
 
+#include <ethosu_driver.h>
+
+#include <executorch/backends/arm/runtime/VelaBinStream.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-
-#include <executorch/backends/arm/runtime/VelaBinStream.h>
-
-#include <ethosu_driver.h>
-#include <pmu_ethosu.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 using namespace std;
 
-namespace torch {
-namespace executor {
+using executorch::aten::ScalarType;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace backends {
+namespace arm {
 
 typedef struct {
   FreeableBuffer* processed;
   bool permuted_io_flag;
 } ExecutionHandle;
 
-class ArmBackend final : public PyTorchBackendInterface {
+extern "C" {
+void __attribute__((weak)) ArmBackend_execute_begin() {}
+void __attribute__((weak)) ArmBackend_execute_end() {}
+}
+
+class ArmBackendExecuteCallbacks {
+ public:
+  ArmBackendExecuteCallbacks() {
+    ArmBackend_execute_begin();
+  }
+  ~ArmBackendExecuteCallbacks() {
+    ArmBackend_execute_end();
+  }
+};
+
+class ArmBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ArmBackend() {}
 
@@ -50,7 +80,6 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     char* data = (char*)processed->data();
     size_t size = processed->size();
-    char* foot = data + size - sizeof(VelaBinBlock);
 
     // Verify format of vela_bin
     if (vela_bin_validate(data, size) == false) {
@@ -63,6 +92,7 @@ class ArmBackend final : public PyTorchBackendInterface {
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
     handle->processed = processed;
 
+    handle->permuted_io_flag = false;
     for (auto& compile_spec : compile_specs) {
       if (0 == std::strcmp(compile_spec.key, "permute_memory_format") &&
           0 == std::memcmp(compile_spec.value.buffer, "nhwc", 4)) {
@@ -82,9 +112,10 @@ class ArmBackend final : public PyTorchBackendInterface {
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
+    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
     char* data = (char*)execution_handle->processed->data();
-    ET_LOG(Info, "ArmBackend::execute %p", data);
+    ET_LOG(Debug, "ArmBackend::execute %p", data);
 
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
@@ -95,7 +126,7 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     ET_LOG(
         Debug,
-        "ArmBackend::execute: Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
+        "ArmBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
         handles.cmd_data,
         handles.cmd_data_size,
         handles.weight_data,
@@ -107,8 +138,8 @@ class ArmBackend final : public PyTorchBackendInterface {
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
     //                     or DRAM output for compatible data layouts.
     for (int i = 0; i < handles.inputs->count; i++) {
+      auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
-      VelaIO* scratch_in = &handles.inputs->io[i];
       char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
 
       // We accept:
@@ -124,7 +155,17 @@ class ArmBackend final : public PyTorchBackendInterface {
       if (!supported) {
         ET_LOG(
             Error,
-            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs",
+            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
+            i,
+            executorch::runtime::toString(tensor_in.scalar_type()));
+        return Error::InvalidProgram;
+      }
+      supported = executorch::runtime::is_contiguous_dim_order(
+          tensor_in.dim_order().data(), tensor_in.dim());
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
             i);
         return Error::InvalidProgram;
       }
@@ -147,8 +188,9 @@ class ArmBackend final : public PyTorchBackendInterface {
       if (both_char and permuted_input_shape) {
         // permuted byte copy CHW to HWC
         permute_CHW_to_HWC(
-            scratch_addr,
             tensor_in.mutable_data_ptr<char>(),
+            scratch_addr,
+            tensor_in.size(1),
             tensor_in.size(2),
             tensor_in.size(3));
       } else if (both_char or both_int) {
@@ -161,11 +203,26 @@ class ArmBackend final : public PyTorchBackendInterface {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
       }
+      if (!permuted_input_shape) {
+        calculate_dimensions(
+            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+        if (tensor_count != io_count) {
+          ET_LOG(Error, "Input tensor sizes do not match");
+          ET_LOG(
+              Error,
+              "Program expects %d elements but got %d",
+              io_count,
+              tensor_count);
+          return Error::InvalidProgram;
+        }
+      }
     }
 
     // Allocate driver handle and synchronously invoke driver
-    ethosu_driver* drv = ethosu_reserve_driver();
-    if (drv == NULL) {
+    auto driver =
+        std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
+            ethosu_reserve_driver(), ethosu_release_driver);
+    if (driver == NULL) {
       ET_LOG(Error, "ArmBackend::execute: ethosu_reserve_driver failed");
       return Error::InvalidState;
     }
@@ -178,7 +235,7 @@ class ArmBackend final : public PyTorchBackendInterface {
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
     int result = ethosu_invoke_v3(
-        drv,
+        driver.get(),
         (void*)handles.cmd_data,
         handles.cmd_data_size,
         bases,
@@ -193,20 +250,58 @@ class ArmBackend final : public PyTorchBackendInterface {
           result);
       return Error::InvalidProgram;
     }
-
+    int tensor_dim = 0, io_dim = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
+      int tensor_count = 1, io_count = 1;
       const char* output_addr =
           handles.scratch_data + handles.outputs->io[i].offset;
       // Process input EValue into scratch
-      int* output_address = (int*)output_addr;
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();
-      for (int j = 0; j < tensor_out.numel(); j++) {
-        tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+
+      calculate_dimensions(
+          tensor_out, &handles.outputs->io[i], &tensor_count, &io_count);
+
+      // At times the topological order of the outputs may change.
+      // Lets instead ensure that the sum of dimensions match.
+      tensor_dim = tensor_dim + tensor_count;
+      io_dim = io_dim + io_count;
+
+      bool permuted_output_shape;
+      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
+          i,
+          tensor_out,
+          &handles.outputs->io[i],
+          execution_handle->permuted_io_flag,
+          &permuted_output_shape));
+      if (tensor_out.scalar_type() == ScalarType::Char and
+          permuted_output_shape) {
+        char* output_address = (char*)output_addr;
+        permute_HWC_to_CHW(
+            output_address,
+            tensor_out.mutable_data_ptr<char>(),
+            tensor_out.size(1),
+            tensor_out.size(2),
+            tensor_out.size(3));
+      } else {
+        for (int j = 0; j < tensor_out.numel(); j++) {
+          if (tensor_out.scalar_type() == ScalarType::Char) {
+            char* output_address = (char*)output_addr;
+            tensor_out.mutable_data_ptr<char>()[j] = output_address[j];
+          } else {
+            int* output_address = (int*)output_addr;
+            tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+          }
+        }
       }
     }
-
+    if (tensor_dim != io_dim) {
+      ET_LOG(Error, "Total output tensor sizes do not match");
+      ET_LOG(
+          Error, "Program expects size of %d but got %d", tensor_dim, io_dim);
+      return Error::InvalidProgram;
+    }
     return Error::Ok;
   }
 
@@ -215,53 +310,65 @@ class ArmBackend final : public PyTorchBackendInterface {
   }
 
  private:
+  void calculate_dimensions(
+      const executorch::aten::Tensor tensor,
+      VelaIO* io,
+      int* tensor_count,
+      int* io_count) const {
+    for (int i = 0; i < tensor.dim(); i++) {
+      *tensor_count = *tensor_count * tensor.size(i);
+    }
+
+    // The VelaIO type has a shape of fixed size 4
+    for (int i = 0; i < 4; i++) {
+      *io_count = *io_count * io->shape[i];
+    }
+  }
+
   Error check_requires_permute(
       int index,
-      const exec_aten::Tensor tensor_in,
-      VelaIO* input,
+      const executorch::aten::Tensor tensor,
+      VelaIO* io,
       bool permuted_io_flag,
       bool* is_permuted) const {
-    bool permuted_input_shape = false;
-    if (tensor_in.dim() == 4) {
+    bool permuted_shape = false;
+
+    if (tensor.dim() == 4) {
       // special case for NHWC workaround in AOT; as the compilation has
       // permuted to channel last in an undetectable way, we assume here
-      // that the application has similarly permuted any input tensors.
-      permuted_input_shape = tensor_in.size(0) == input->shape[0] &&
-          tensor_in.size(1) == input->shape[3] &&
-          tensor_in.size(2) == input->shape[1] &&
-          tensor_in.size(3) == input->shape[2];
-      if (permuted_input_shape) {
-        ET_LOG(Info, "Tensor input %d will be permuted", index);
+      // that the application has similarly permuted any input/output tensors.
+      permuted_shape = tensor.size(0) == io->shape[0] &&
+          tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
+          tensor.size(3) == io->shape[2];
+      if (permuted_shape) {
+        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
       }
-      if (permuted_io_flag != permuted_input_shape) {
-        ET_LOG(Error, "Permute compile flag and permuted input don't agree");
+      if (permuted_io_flag != permuted_shape) {
+        ET_LOG(
+            Error,
+            "Permute compile flag and permuted input/output don't agree");
         return Error::InvalidProgram;
       }
     }
-    if (!permuted_input_shape) {
-      // Error check matching shapes in the general case
-      for (int i = 0; i < tensor_in.dim(); i++) {
-        if (tensor_in.size(i) != input->shape[i]) {
-          ET_LOG(Error, "Tensor input %d mismatched shape", index);
-          ET_LOG(
-              Error,
-              "dimension %d mismatch, %d != %d",
-              index,
-              tensor_in.size(i),
-              input->shape[i]);
-          return Error::InvalidProgram;
-        }
-      }
-    }
-    *is_permuted = permuted_input_shape;
+    *is_permuted = permuted_shape;
     return Error::Ok;
   }
 
-  void permute_CHW_to_HWC(char* input, char* output, int H, int W) const {
+  void permute_CHW_to_HWC(char* input, char* output, int C, int H, int W)
+      const {
     for (int i = 0; i != H * W; ++i) {
-      output[i * 3 + 0] = input[i + 0 * W * H];
-      output[i * 3 + 1] = input[i + 1 * W * H];
-      output[i * 3 + 2] = input[i + 2 * W * H];
+      for (int j = 0; j < C; ++j) {
+        output[i * C + j] = input[i + j * W * H];
+      }
+    }
+  }
+
+  void permute_HWC_to_CHW(char* input, char* output, int C, int H, int W)
+      const {
+    for (int i = 0; i != H * W; ++i) {
+      for (int j = 0; j < C; ++j) {
+        output[i + j * W * H] = input[i * C + j];
+      }
     }
   }
 };
@@ -272,5 +379,6 @@ Backend backend_id{"ArmBackend", &backend};
 static auto registered = register_backend(backend_id);
 } // namespace
 
-} // namespace executor
-} // namespace torch
+} // namespace arm
+} // namespace backends
+} // namespace executorch

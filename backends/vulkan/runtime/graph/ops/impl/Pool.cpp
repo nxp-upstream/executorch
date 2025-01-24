@@ -17,9 +17,9 @@
 
 namespace vkcompute {
 
-void check_pool2d_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+void check_pool2d_args(const api::vTensor& in, const api::vTensor& out) {
+  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
+  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
 }
 
 void resize_pool2d_node(
@@ -71,16 +71,15 @@ void add_max_pool2d_node(
     const ValueRef dilation,
     const ValueRef ceil_mode,
     const ValueRef out) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-  vTensorPtr t_in = graph.get_tensor(arg);
+  vTensorPtr t_in = graph.get_tensor(in);
 
   const auto out_val = graph.get_value_list(out);
   vTensorPtr t_out = graph.get_tensor(out_val->at(0));
 
   check_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_out->logical_limits();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("max_pool2d");
   add_dtype_suffix(kernel_name, *t_out);
@@ -93,17 +92,17 @@ void add_max_pool2d_node(
       padding,
       dilation);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1)}, api::MemoryAccessType::WRITE},
-       {arg, api::MemoryAccessType::READ}},
+      {{{out_val->at(0), out_val->at(1)}, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->texture_limits_ubo(),
+          t_out->logical_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
       },
@@ -149,14 +148,13 @@ void add_avg_pool2d_node(
     const ValueRef count_include_pad,
     const ValueRef divisor_override,
     const ValueRef out) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-  vTensorPtr t_in = graph.get_tensor(arg);
+  vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
   check_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_out->logical_limits();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("avg_pool2d");
   add_dtype_suffix(kernel_name, *t_out);
@@ -167,15 +165,16 @@ void add_avg_pool2d_node(
   DivisorParams divisor_params =
       create_divisor_params(graph, divisor_override, count_include_pad);
 
-  graph.execute_nodes().emplace_back(new ExecuteNode(
+  graph.execute_nodes().emplace_back(new DispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
+      {t_out->logical_limits_ubo(),
        t_in->sizes_ubo(),
        graph.create_params_buffer(kernel_params),
        graph.create_params_buffer(divisor_params)},

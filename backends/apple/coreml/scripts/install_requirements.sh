@@ -24,7 +24,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone --depth 1 --branch 8.0b1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+git clone --depth 1 --branch 8.1 "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
 cd $COREMLTOOLS_DIR_PATH
 
 STATUS=$?
@@ -47,6 +47,7 @@ cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
 
 echo "${green}ExecuTorch: Installing coremltools."
 pip install "$COREMLTOOLS_DIR_PATH"
+
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools."

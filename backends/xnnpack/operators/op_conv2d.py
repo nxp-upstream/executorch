@@ -8,12 +8,12 @@ from typing import cast, Dict, List
 
 import torch
 from executorch.backends.transforms import get_shape
+from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
-from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConv2d,
     XNNDepthwiseConv2d,
@@ -52,6 +52,9 @@ class Conv2d(NodeVisitor):
         )  # NHWC input
         kwargs["input1_id"] = vals_to_ids[get_input_node(node, 0)]
 
+        # filter shape for pytorch convolution is (oc, inc/groups, height, width)
+        # shape for xnnpack convolution is (oc, height, width, inc/groups), to convert
+        # to the proper shape, this is essentially a NCHW to NHWC conversion
         kernel_node = get_input_node(node, 1)
         kernel_shape = get_shape(kernel_node)
         groups = cast(int, node.args[8])
@@ -65,19 +68,13 @@ class Conv2d(NodeVisitor):
         is_depthwise_conv = (group_input_channels == 1) and (
             group_output_channels % group_input_channels == 0
         )
-        # filter
-        # filter shape for pytorch convolution is (oc, inc/groups, height, width)
-        # shape for xnnpack convolution is (oc, height, width, inc/groups), to convert
-        # to the proper shape, this is essentially a NCHW to NHWC conversion
-        weight_node = get_input_node(node, 1)
         weight_quant_params = QuantParams.from_weights(
-            weight_node, self._exported_program
+            kernel_node, self._exported_program
         )
-
-        fp32_static_weights = weight_node.meta["val"].dtype == torch.float16
+        fp32_static_weights = kernel_node.meta["val"].dtype == torch.float16
 
         self.define_tensor(
-            weight_node,
+            kernel_node,
             xnn_graph,
             vals_to_ids,
             convert_to_nhwc=True,

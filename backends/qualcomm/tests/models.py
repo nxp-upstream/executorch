@@ -29,7 +29,7 @@ class AddConstantLong(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return 10.0 + x
+        return 10 + x
 
 
 class Arange(torch.nn.Module):
@@ -53,6 +53,16 @@ class AvgPoolModule(torch.nn.Module):
 
     def forward(self, x):
         return self.avgPool(x)
+
+
+class BatchNorm(torch.nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.eval()
+
+    def forward(self, x):
+        return self.native_batchnorm(x)
 
 
 class Bmm(torch.nn.Module):
@@ -189,15 +199,28 @@ class CompositeDelegateModule(torch.nn.Module):
         return CompositeReferenceModule(self.modules)
 
 
+class ContextBinaryExample(torch.nn.Module):
+    def forward(self, x, y):
+        x = torch.nn.functional.relu(x)
+        y = torch.nn.functional.relu(y)
+        return x, y
+
+    def example_inputs(self):
+        return {
+            "x": torch.randn((1, 3, 3, 3)),
+            "y": torch.randn((2, 1, 5, 5)),
+        }
+
+
 class Conv1dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.first = torch.nn.Conv1d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
         self.second = torch.nn.Conv1d(
@@ -205,7 +228,7 @@ class Conv1dSequential(torch.nn.Module):
             out_channels=2,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -302,40 +325,82 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
 
 class Conv2dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True, channel_last=False):
         super().__init__()
         self.first = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
         self.second = torch.nn.Conv2d(
             in_channels=3,
             out_channels=2,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
+        self.channel_last = channel_last
 
     def forward(self, x):
+        x = x.to(memory_format=torch.channels_last) if self.channel_last else x
         return self.second(self.first(x))
 
 
 class Conv2dSingle(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
         return self.conv(x)
+
+
+class ConvTranspose2dSingle(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(x)
+
+
+class Conv2dDownUpSample(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+        self.conv_transpose = torch.nn.ConvTranspose2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.conv_transpose(self.conv(x))
 
 
 class Conv2dSumReduceDim(torch.nn.Module):
@@ -351,6 +416,25 @@ class Conv2dSumReduceDim(torch.nn.Module):
 
     def forward(self, x):
         return torch.sum(self.first(x), dim=(2, 3), keepdim=False)
+
+
+class Conv2dTopK(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(3, 16, 3)
+
+    def forward(self, x):
+        x = self.conv(x)
+        topk_values, topk_indices = torch.topk(x, 5, dim=1)
+        return topk_values
+
+
+class Cos(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.cos(x)
 
 
 class Div(torch.nn.Module):
@@ -375,6 +459,47 @@ class DivConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return x / 10
+
+
+class DrawGraphModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu1 = torch.nn.ReLU()
+        self.relu2 = torch.nn.ReLU()
+        kernel_sz = 32
+        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        y1 = self.relu1(x1)
+        y2 = self.relu1(x2)
+        return y1 + y2
+
+
+class EinsumBilinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, bn, anm, bm):
+        return torch.einsum("bn,anm,bm->ba", bn, anm, bm)
+
+
+class EinsumOuterProduct(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, i, j):
+        return torch.einsum("i,j->ij", i, j)
+
+
+class EinsumOuterProductRelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, i, j):
+        return torch.relu(torch.einsum("i,j->ij", i, j))
 
 
 class Embedding(torch.nn.Module):
@@ -403,6 +528,24 @@ class Gelu(torch.nn.Module):
         return self.gelu(x)
 
 
+class GroupNorm(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            32,
+            256,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=bias,
+        )
+        self.norm = torch.nn.GroupNorm(32, 256)
+
+    def forward(self, x):
+        y = self.conv(x)
+        return y, self.norm(y)
+
+
 class HardSigmoid(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -428,6 +571,29 @@ class HardTanh(torch.nn.Module):
 
     def forward(self, x):
         return self.hardtanh(x)
+
+
+class Index(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int32)
+        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]], dtype=torch.int32)
+
+    def forward(self, x):
+        return x[self.idx0] + x[self.idx1]
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "k_cache",
+            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
+        return k_out
 
 
 class LayerNorm(torch.nn.Module):
@@ -698,6 +864,16 @@ class ResizeNearest2D(torch.nn.Module):
         )
 
 
+class RmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-5
+        self.rms = torch.nn.RMSNorm([4], 1e-5)
+
+    def forward(self, x):
+        return self.rms(x)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -738,6 +914,14 @@ class Sigmoid(torch.nn.Module):
 
     def forward(self, x):
         return torch.sigmoid(x)
+
+
+class Sin(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sin(x)
 
 
 class SimpleModel(torch.nn.Module):
@@ -786,6 +970,20 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyWithStep(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.position_ids = torch.randn([1, 512])
+        self.step = 2
+
+    def forward(self, x, y):
+        seq_length = y.size()[1]
+        return (
+            x[:, : seq_length : self.step]
+            + self.position_ids[:, : seq_length : self.step]
+        )
 
 
 class Softmax(torch.nn.Module):
@@ -866,6 +1064,16 @@ class Tanh(torch.nn.Module):
 
     def forward(self, x):
         return torch.tanh(x)
+
+
+class TopKandIndex(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.idx_source = torch.rand(10, 3)
+
+    def forward(self, x):
+        a, b = torch.topk(x, 3)
+        return a + self.idx_source[b]
 
 
 class Unbind(torch.nn.Module):

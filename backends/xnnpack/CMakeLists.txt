@@ -32,6 +32,21 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
+# NB: Enabling this will serialize execution of delegate instances
+# Keeping this OFF by default to maintain existing behavior, to be revisited.
+option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
+  "Enable workspace sharing across different delegate instances" ON)
+# Keeping this OFF by default due to regressions in decode
+# and model load with kleidi kernels
+option(EXECUTORCH_XNNPACK_ENABLE_KLEIDI
+  "Enable Arm Kleidi kernels" OFF)
+if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
+  add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
+endif()
+if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
+  add_definitions(-DENABLE_XNNPACK_KLEIDI)
+endif()
+
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -84,7 +99,7 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(
-  xnnpack_backend PRIVATE ${xnnpack_third_party} executorch_no_prim_ops
+  xnnpack_backend PRIVATE ${xnnpack_third_party} executorch_core
                           xnnpack_schema
 )
 
@@ -125,3 +140,7 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

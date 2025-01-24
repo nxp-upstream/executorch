@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,11 +9,10 @@ import torch
 from torch.fx import Node
 
 from executorch.backends.nxp.backend.edge_helper import input_tensor, input_tensor_safe
-from executorch.backends.nxp.backend.ir.converter.conversion import common
+from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input, OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
-from executorch.backends.nxp.backend.ir.lib.tflite import Padding
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import conv_2d_options
@@ -24,13 +23,9 @@ class ConvolutionConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(node: Node) -> bool:
-        padding = node.args[4]
         is_transposed = node.args[6]
         output_padding = node.args[7]
         groups = node.args[8]
-
-        if padding != [0, 0]:
-            return False
 
         if is_transposed:
             return False
@@ -49,9 +44,16 @@ class ConvolutionConverter(NodeConverter):
 
         return True
 
-    def _convert_2d_conv(self, stride, dilation, t_op: tflite_model.Operator) -> list[tflite_model.Operator]:
+    def _convert_2d_conv(self, stride, padding, dilation, t_op: tflite_model.Operator) -> list[tflite_model.Operator]:
+        ops = OpsList(middle_op=t_op)
         t_op.builtin_options = conv_2d_options.Conv2D()
-        t_op.builtin_options.padding = Padding.Padding.VALID
+        common.assign_2d_strides(t_op.builtin_options, stride)
+        common.assign_2d_dilations(t_op.builtin_options, dilation)
+        t_op.builtin_options.padding, explicit_padding = aten_translator.convert_padding(padding)
+
+        if explicit_padding is not None:
+            # Need to prepend a 'Pad' operator, which adds 0s. But these will be included in the computation!
+            ops.add_pre(self.builder.create_pad_operator_before(t_op, 0, explicit_padding))
 
         input_tensor: tflite_model.Tensor = t_op.tmp_inputs[0]
         weight_tensor: tflite_model.Tensor = t_op.tmp_inputs[1]
@@ -83,22 +85,16 @@ class ConvolutionConverter(NodeConverter):
         t_op.tmp_inputs = [input_tensor, weight_tensor, bias_tensor]
         t_op.tmp_outputs = [output_tensor]
 
-        ops_list = OpsList()
-        ops_list.middle_op = t_op
-
-        # Convert the builtin options
-        common.assign_2d_strides(t_op.builtin_options, stride)
-        common.assign_2d_dilations(t_op.builtin_options, dilation)
-
-        return ops_list.flatten()
+        return ops.flatten()
 
     def convert(self, node: Node):
         self.assert_convertible(node)
 
         stride = node.args[3]
+        padding = node.args[4]
         dilation = node.args[5]
 
         t_op = self._create_tflite_op_with_io_tensors(node)
-        ops_to_add = self._convert_2d_conv(stride, dilation, t_op)
+        ops_to_add = self._convert_2d_conv(stride, padding, dilation, t_op)
 
         self.builder.append_operators(ops_to_add)

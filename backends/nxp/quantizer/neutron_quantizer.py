@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -108,6 +108,15 @@ class MaxPoolPattern(SharedSpecPattern):
     def partition_types(self):
         return [torch.nn.MaxPool2d]
 
+class AvgPoolPattern(SharedSpecPattern):
+    """
+    Quantizer for AvgPool2D operator.
+    """
+
+    def partition_types(self):
+        return [torch.nn.AvgPool2d]
+
+
 class ConstPadNdPattern(SharedSpecPattern):
     """
     Quantizer for Const_pad_nd operator.
@@ -207,6 +216,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(ConstPadNdPattern(), static_qconfig),
                 CadenceAtenQuantizer(PermuteCopyPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
             ]
         )
 

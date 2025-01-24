@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -8,7 +8,7 @@ import torch
 
 from executorch import exir
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
-from executorch.backends.nxp.tests.models import Conv2dModule, SoftmaxModule, Maxpool2dModule
+from executorch.backends.nxp.tests.models import Conv2dModule, SoftmaxModule, MaxPool2dModule
 from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
@@ -51,7 +51,7 @@ def test_softmax():
         assert expected_mapping[node.name] == node_format
 
 def test_maxpool2d():
-    model = Maxpool2dModule()
+    model = MaxPool2dModule()
     example_input = (torch.ones(1, 4, 32, 32),)
 
     exir_program = torch.export.export(model, example_input)

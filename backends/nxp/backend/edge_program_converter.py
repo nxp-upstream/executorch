@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -27,8 +27,10 @@ functions_converters = {
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
     exir_ops.edge.aten.relu.default: ReLUConverter,
-    exir_ops.edge.aten.max_pool2d.default: Maxpool2dConverter
+    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
+
 }
 
 

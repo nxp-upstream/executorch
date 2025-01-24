@@ -1,4 +1,4 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -35,6 +35,7 @@ class NodeFormatInference:
     # The op in the dictionary is mapped to a dictionary, which holds indices to input nodes
     # that are always channels first.
     ops_with_channels_first_nodes = {
+        exir_ops.edge.aten.avg_pool2d.default: {"inputs": [0]},
         exir_ops.edge.aten.convolution.default: {"inputs": [0, 1]},
         exir_ops.edge.aten.max_pool2d_with_indices.default: {"inputs": [0]},
         exir_ops.edge.aten.max_pool2d.default: {"inputs": [0]},

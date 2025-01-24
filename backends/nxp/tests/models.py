@@ -1,27 +1,28 @@
-# Copyright (c) 2024 NXP
+# Copyright (c) 2024-2025 NXP
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Collection
-
 import torch
+
+from typing import Collection, Union
 
 
 class Conv2dModule(torch.nn.Module):
     def __init__(self, bias: bool = True,
-                 dilation: int = 1,
+                 dilation: Union[int, tuple[int, int]] = 1,
                  in_channels: int = 4,
-                 kernel_size: int = 3,
+                 kernel_size: Union[int, tuple[int, int]] = 3,
                  out_channels: int = 8,
-                 stride: int = 2,
+                 padding: Union[str, int, Collection[int]] = 0,
+                 stride: Union[int, tuple[int, int]] = 2,
     ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
             in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-            bias=bias, stride=stride, dilation=dilation
+            stride=stride, padding=padding, dilation=dilation, bias=bias,
         )
 
     def forward(self, x):
@@ -123,16 +124,56 @@ class ConstantPadNDConvModule(torch.nn.Module):
         return self.conv(x)
 
 
-class Maxpool2dModule(torch.nn.Module):
-    def __init__(self):
+class MaxPool2dModule(torch.nn.Module):
+    def __init__(self, padding=0):
         super().__init__()
 
-        self.maxpool2d = torch.nn.MaxPool2d(
-            kernel_size=3, stride=2, dilation=1
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=3, stride=2, padding=padding, dilation=1
         )
 
     def forward(self, x):
-        return self.maxpool2d(x)
+        return self.max_pool2d(x)
+
+
+class MaxPool2dConvModule(torch.nn.Module):
+    def __init__(self, padding=0):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.max_pool2d = torch.nn.MaxPool2d(
+            kernel_size=3, stride=2, padding=padding, dilation=1
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.max_pool2d(x)
+
+
+class AvgPool2dModule(torch.nn.Module):
+    def __init__(self, count_include_pad, padding=0):
+        super().__init__()
+
+        self.avg_pool = torch.nn.AvgPool2d(
+            kernel_size=3, stride=2, padding=padding, count_include_pad=count_include_pad
+        )
+
+    def forward(self, x):
+        return self.avg_pool(x)
+
+
+class AvgPool2dConvModule(torch.nn.Module):
+    def __init__(self, count_include_pad, padding=0):
+        super().__init__()
+
+        self.conv = Conv2dModule()
+        self.avg_pool = torch.nn.AvgPool2d(
+            kernel_size=3, stride=1, padding=padding, count_include_pad=count_include_pad
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.avg_pool(x)
 
 
 class ReLUModule(torch.nn.Module):

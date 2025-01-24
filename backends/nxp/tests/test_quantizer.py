@@ -114,7 +114,7 @@ def test_quantizer_softmax():
     assert dtype == torch.int8
 
 def test_quantizer_single_maxpool2d():
-    model = models.Maxpool2dModule()
+    model = models.MaxPool2dModule()
     model.eval()
 
     example_input = (torch.ones(1, 4, 32, 32))

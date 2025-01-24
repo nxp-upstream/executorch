@@ -27,7 +27,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     Conv2dPattern,
     LinearPattern,
 )
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceGenericQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceAtenQuantizer
 
 # Quantization Specification used by Neutron NPU
 act_qspec = QuantizationSpec(
@@ -197,16 +197,16 @@ class NeutronQuantizer(ComposableQuantizer):
         )
         super().__init__(
             [
-                CadenceGenericQuantizer(AddmmPattern(), static_fc_qconfig), # TODO need to be verified, not use by CifarNet
-                CadenceGenericQuantizer(Conv1dPattern(), static_qconfig),
-                CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
-                CadenceGenericQuantizer(LinearPattern(), static_fc_qconfig),
-                CadenceGenericQuantizer(MaxPoolPattern(), static_qconfig),
-                CadenceGenericQuantizer(SoftMaxPattern(), static_qconfig),
-                CadenceGenericQuantizer(ViewCopyPattern(), static_qconfig),
-                CadenceGenericQuantizer(ConstPadNdPattern(), static_qconfig),
-                CadenceGenericQuantizer(PermuteCopyPattern(), static_qconfig),
-                CadenceGenericQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(AddmmPattern(), static_fc_qconfig), # TODO need to be verified, not use by CifarNet
+                CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
+                CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
+                CadenceAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                CadenceAtenQuantizer(MaxPoolPattern(), static_qconfig),
+                CadenceAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                CadenceAtenQuantizer(ViewCopyPattern(), static_qconfig),
+                CadenceAtenQuantizer(ConstPadNdPattern(), static_qconfig),
+                CadenceAtenQuantizer(PermuteCopyPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluPattern(), static_qconfig),
             ]
         )
 

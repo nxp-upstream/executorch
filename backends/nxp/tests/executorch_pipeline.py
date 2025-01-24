@@ -39,9 +39,7 @@ def to_quantized_executorch_program(model: torch.nn.Module, input_shape: tuple) 
     edge_program_manager = to_quantized_edge_program(model, input_shape)
 
     return edge_program_manager.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
 

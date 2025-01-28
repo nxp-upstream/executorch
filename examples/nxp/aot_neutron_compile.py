@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -21,6 +21,8 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
+from executorch.examples.nxp.models.mlperf_tiny import (AnomalyDetection, KeywordSpotting, ImageClassification,
+                                                        VisualWakeWords)
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util import export_to_edge, save_pte_program
 
@@ -82,6 +84,10 @@ def get_model_and_inputs_from_name(model_name: str):
 
 models = {
     "cifar10": CifarNet,
+    "visual_wake_words": VisualWakeWords,
+    "keyword_spotting": KeywordSpotting,
+    "image_classification": ImageClassification,
+    "anomaly_detection": AnomalyDetection,
 }
 
 

@@ -29,8 +29,8 @@ def test_neutron_backend__single_conv_model__payload_header():
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
     assert payload[0] == 0x1  # Single input
-    assert payload[1] == 0x1  # Channels last
-    assert payload[2] == 0x1  # Single output
+    assert payload[1] == 0x1  # Single output
+    assert payload[2] == 0x1  # Channels last
     assert payload[3] == 0x1  # Channels last
     assert all(byte == 0x0 for byte in payload[4:16])  # Aligned to 16 bytes
     assert payload[17] != 0x0  # Followed by non-zero content
@@ -41,8 +41,8 @@ def test_neutron_backend__single_softmax_model__payload_header():
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
     assert payload[0] == 0x1  # Single input
-    assert payload[1] == 0x0  # Formatless
-    assert payload[2] == 0x1  # Single output
+    assert payload[1] == 0x1  # Single output
+    assert payload[2] == 0x0  # Formatless
     assert payload[3] == 0x0  # Formatless
     assert all(byte == 0x0 for byte in payload[4:16])  # Aligned to 16 bytes
     assert payload[17] != 0x0  # Followed by non-zero content

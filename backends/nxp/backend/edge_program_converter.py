@@ -30,7 +30,6 @@ functions_converters = {
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
     exir_ops.edge.aten.relu.default: ReLUConverter,
     exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
-
 }
 
 

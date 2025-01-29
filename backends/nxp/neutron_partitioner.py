@@ -15,8 +15,8 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-from executorch.backends.nxp.backend.edge_program_converter import functions_converters
 from executorch.backends.nxp.backend.ir.converter.node_converter import Target
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -176,21 +176,20 @@ class QDQClusterRecognizer:
                     self.cluster_map[cluster_name] = self.QDQCluster(node, cluster)
 
 
-# Operators supported on Neutron.
-# Note: This configuration assign the whole cifar10 model on the neutron. If you need a specific case for testing or
-# evaluation, comment out particular operator.
-NeutronSupportedOperatorsList = [
-    exir_ops.edge.aten._softmax.default,
-    exir_ops.edge.aten.avg_pool2d.default,
-    exir_ops.edge.aten.constant_pad_nd.default,
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.aten.max_pool2d_with_indices.default,
-    exir_ops.edge.aten.mm.default,
-    exir_ops.edge.aten.addmm.default,
-    exir_ops.edge.aten.relu.default,
-    exir_ops.edge.aten.view_copy.default, # TODO: The view copy, is used as reshape. This shall be delegated only if the
-                                          # the reshape is not the only operator in the cluster.
-]
+supported_ops = {
+    exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
+    exir_ops.edge.aten.addmm.default: AddMMConverter,
+    exir_ops.edge.aten.mm.default: MMConverter,
+    exir_ops.edge.aten._softmax.default: SoftmaxConverter,
+    exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
+    exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
+    exir_ops.edge.aten.relu.default: ReLUConverter,
+    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,
+
+}
 
 
 class NeutronSupportedOperators(OperatorSupportBase):
@@ -209,7 +208,7 @@ class NeutronSupportedOperators(OperatorSupportBase):
         """
         Operator checking function for compute nodes.
         """
-        if (node_converter := functions_converters.get(node.target, None)) is None:
+        if (node_converter := supported_ops.get(node.target, None)) is None:
             # There is no `NodeConverter` for this `node`.
             return False
 

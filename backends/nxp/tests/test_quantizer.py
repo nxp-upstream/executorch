@@ -12,8 +12,11 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 import executorch.backends.nxp.tests.models as models
 
+
 def _get_target_name(node):
     return node._pretty_print_target(node.target)
+
+
 def test_quantizer_conv2d():
     model = models.Conv2dModule()
     model.eval()
@@ -37,6 +40,7 @@ def test_quantizer_conv2d():
     assert _get_target_name(nodes[8]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
     assert nodes[8].args[0].name == "conv2d"
 
+
 def test_quantizer_linear():
     model = models.LinearModule(bias=True)
     model.eval()
@@ -59,6 +63,7 @@ def test_quantizer_linear():
     assert _get_target_name(nodes[7].args[2]) == 'torch.ops.quantized_decomposed.dequantize_per_tensor.default'
     assert _get_target_name(nodes[8]) == 'torch.ops.quantized_decomposed.quantize_per_tensor.default'
     assert nodes[8].args[0].name == "linear"
+
 
 def test_quantizer_maxpool2d():
     model = models.Conv2dAndMaxPool2DModule()
@@ -86,6 +91,7 @@ def test_quantizer_maxpool2d():
     output_quant = nodes[11].args[1:]
     assert input_quant == output_quant
 
+
 def test_quantizer_softmax():
     model = models.SoftmaxModule(dim=0)
     model.eval()
@@ -108,10 +114,11 @@ def test_quantizer_softmax():
     assert nodes[4].args[0].name == "softmax"
 
     # Check output quantization
-    scale, zp, _, _, dtype  = nodes[4].args[1:]
-    assert scale == 1.0/256.0
+    scale, zp, _, _, dtype = nodes[4].args[1:]
+    assert scale == 1.0 / 256.0
     assert zp == -128
     assert dtype == torch.int8
+
 
 def test_quantizer_single_maxpool2d():
     model = models.MaxPool2dModule()
@@ -130,3 +137,60 @@ def test_quantizer_single_maxpool2d():
     assert len(nodes) == 3
     assert nodes[1].name == "max_pool2d"
     assert "quantization_annotation" not in nodes[1].meta
+
+
+def test_quantizer__conv2d_relu():
+    model = models.Conv2dReLUModule()
+    model.eval()
+
+    example_input = (torch.ones(1, 4, 32, 32))
+    quantizer = NeutronQuantizer()
+    exir_program = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    m = prepare_pt2e(exir_program, quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+    nodes = list(m.graph.nodes)
+
+    assert len(nodes) == 12
+    assert nodes[7].name == "dequantize_per_tensor_default_2"
+    assert nodes[8].name == "relu"
+    assert nodes[9].name == "quantize_per_tensor_default_3"
+
+
+def test_quantizer__conv2d_avg_pool2d():
+    model = models.AvgPool2dConvModule(count_include_pad=False)
+    model.eval()
+
+    example_input = (torch.ones(1, 4, 16, 16))
+    quantizer = NeutronQuantizer()
+    exir_program = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    m = prepare_pt2e(exir_program, quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+    nodes = list(m.graph.nodes)
+
+    assert len(nodes) == 14
+    assert nodes[9].name == "dequantize_per_tensor_default_3"
+    assert nodes[10].name == "avg_pool2d"
+    assert nodes[11].name == "quantize_per_tensor_default_4"
+
+
+def test_quantizer__conv2d_permute():
+    model = models.Conv2dPermuteModule()
+    model.eval()
+
+    example_input = (torch.ones(1, 4, 16, 16))
+    quantizer = NeutronQuantizer()
+    exir_program = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    m = prepare_pt2e(exir_program, quantizer)
+    m(*example_input)
+    m = convert_pt2e(m)
+    nodes = list(m.graph.nodes)
+
+    assert len(nodes) == 12
+    assert nodes[7].name == "dequantize_per_tensor_default_2"
+    assert nodes[8].name == "permute"
+    assert nodes[9].name == "quantize_per_tensor_default_3"

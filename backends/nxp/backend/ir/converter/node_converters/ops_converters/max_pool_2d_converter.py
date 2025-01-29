@@ -3,9 +3,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import numpy as np
 from torch.fx import Node
 
+from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
@@ -32,9 +33,29 @@ class MaxPool2dConverter(NodeConverter):
 
         return True
 
+    def _get_pad_constant_value(self, input_type: TensorType) -> np.ndarray:
+        """
+        Get scalar NumPy array with constant value used as constant value for 'Pad' operator.
+
+        :param input_type: Input tensor type.
+        :return: Scalar array with single minimum value of given type.
+        """
+
+        match input_type:
+            case TensorType.INT8:
+                return np.asarray([np.iinfo(np.int8).min], dtype=np.int8)
+            case TensorType.UINT8:
+                return np.asarray([np.iinfo(np.uint8).min], dtype=np.uint8)
+            case TensorType.FLOAT32:
+                return np.asarray([np.finfo(np.float32).min], dtype=np.float32)
+            case _:
+                raise RuntimeError(f"Unexpected input type for MaxPool operator.")
+
     # noinspection PyMethodMayBeStatic
     def _convert_2d_max_pool(self, kernel_size, stride, padding, t_op: tflite_model.Operator
                              ) -> list[tflite_model.Operator]:
+        x = t_op.tmp_inputs[0]
+
         ops = OpsList(middle_op=t_op)
         t_op.builtin_options = max_pool_2d_options.MaxPool2D()
         t_op.builtin_options.filter_h = kernel_size[0]
@@ -43,8 +64,11 @@ class MaxPool2dConverter(NodeConverter):
         t_op.builtin_options.padding, explicit_padding = aten_translator.convert_padding(padding)
 
         if explicit_padding is not None:
-            # Need to prepend a 'Pad' operator, which adds 0s. But these will be included in the computation!
-            ops.add_pre(self.builder.create_pad_operator_before(t_op, 0, explicit_padding))
+            # Need to prepend a 'Pad' operator, which adds min values for type.
+            constant_value = self._get_pad_constant_value(x.type)
+            pre_pad_op = self.builder.create_pad_operator_before(t_op, 0, explicit_padding,
+                                                                 constant_value=constant_value)
+            ops.add_pre(pre_pad_op)
 
         return ops.flatten()
 

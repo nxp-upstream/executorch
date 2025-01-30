@@ -32,6 +32,9 @@ class AvgPool2dConverter(NodeConverter):
                 ceil_mode:
             return False
 
+        if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
         return True
 
     # noinspection PyMethodMayBeStatic

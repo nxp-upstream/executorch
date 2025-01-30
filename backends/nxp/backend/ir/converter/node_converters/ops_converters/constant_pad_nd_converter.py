@@ -35,6 +35,9 @@ class ConstantPadNDConverter(NodeConverter):
         if len(paddings) % 2 != 0:
             return False
 
+        if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
         return True
 
     # noinspection PyMethodMayBeStatic

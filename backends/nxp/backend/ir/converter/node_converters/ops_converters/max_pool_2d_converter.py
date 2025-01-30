@@ -31,6 +31,9 @@ class MaxPool2dConverter(NodeConverter):
             ceil_mode:
             return False
 
+        if not NodeConverter._has_shared_q_params_if_quantized(node):
+            return False
+
         return True
 
     def _get_pad_constant_value(self, input_type: TensorType) -> np.ndarray:

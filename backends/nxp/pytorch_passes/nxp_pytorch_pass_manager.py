@@ -9,6 +9,7 @@ from typing import Iterable
 import itertools
 from torch.fx import GraphModule
 
+from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_conv_pass import FuseBatchNormWithConvPass
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass import NXPPyTorchPass
 
 
@@ -18,6 +19,7 @@ class NXPPyTorchPassManager:
     def __init__(self, module: GraphModule, passes: Iterable[type[NXPPyTorchPass]] | None = None):
         self.module = module
         self.passes = passes or [  # New passes should be added here.
+            FuseBatchNormWithConvPass,
         ]
 
     def _clean_up_graph_module(self):

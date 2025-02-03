@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,6 +16,7 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
@@ -174,7 +175,11 @@ if __name__ == "__main__":
     # it yet.
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
-    # 3. Quantize if required
+    # 3. Run pre-processing passes of the float32 aten dialect program.
+    pass_manager = NXPPyTorchPassManager(exir_program_aten)
+    pass_manager.run()  # All passes by default.
+
+    # 4. Quantize if required
     if args.quantize:
         if args.quantize and not args.so_library:
             logging.warning(
@@ -207,14 +212,14 @@ if __name__ == "__main__":
         quantized_str = 'quantized ' if args.quantize else ''
         print(f'\n{cyan}Accuracy of the {quantized_str}`{args.model_name}`: {accuracy}{end_format}\n')
 
-    # 4. Export to edge program
+    # 5. Export to edge program
     # edge_program = exir.to_edge(exir_program_aten)
     edge_program = export_to_edge(exir_program_aten, example_inputs,
                                   verbose=args.debug)  # TODO for now reusing the default for edge_compile_config
     # (compared to Arm)
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
 
-    # 5. Delegate to Neutron
+    # 6. Delegate to Neutron
     if args.delegate is True:
         logging.info("Executing Neutron Partitioner and Delegate")
         edge_program = edge_program.to_backend(
@@ -226,7 +231,7 @@ if __name__ == "__main__":
         )
         logging.debug(f"Lowered graph:\n{edge_program.exported_program().graph}")
 
-    # 6. Export to ExecuTorch program
+    # 7. Export to ExecuTorch program
     try:
         exec_prog = edge_program.to_executorch(
             config=ExecutorchBackendConfig(

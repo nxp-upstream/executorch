@@ -10,6 +10,7 @@ import itertools
 from torch.fx import GraphModule
 
 from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_conv_pass import FuseBatchNormWithConvPass
+from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_linear_pass import FuseBatchNormWithLinearPass
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass import NXPPyTorchPass
 
 
@@ -20,6 +21,7 @@ class NXPPyTorchPassManager:
         self.module = module
         self.passes = passes or [  # New passes should be added here.
             FuseBatchNormWithConvPass,
+            FuseBatchNormWithLinearPass
         ]
 
     def _clean_up_graph_module(self):

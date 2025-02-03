@@ -6,7 +6,9 @@ import torch
 from torch import nn
 from torch.export import ExportedProgram
 
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import AddMMConverter, MMConverter
 from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_conv_pass import FuseBatchNormWithConvPass
+from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_linear_pass import FuseBatchNormWithLinearPass
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 
@@ -47,6 +49,18 @@ class ConvBatchNormModule(torch.nn.Module):
         return self.batch_norm(x)
 
 
+class LinearBatchNormModule(torch.nn.Module):
+    def __init__(self, bias: bool, input_rank: int, fc_in_features: int, fc_out_features: int, eps: float = 1e-5):
+        super().__init__()
+        self.linear = torch.nn.Linear(fc_in_features, fc_out_features, bias=bias)
+        self.batch_norm = BatchNormModule(input_rank, fc_out_features, eps)
+        self.eval()
+
+    def forward(self, x):
+        x = self.linear(x)
+        return self.batch_norm(x)
+
+
 @pytest.mark.parametrize('bias', [True, False], ids=lambda x: 'Bias' if x else 'No bias')
 @pytest.mark.parametrize('input_shape', [[4, 6, 8], [2, 4, 6, 8]], ids=lambda x: f'{len(x)}D')
 def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
@@ -77,6 +91,35 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
 
 
 @pytest.mark.parametrize('bias', [True, False], ids=lambda x: 'Bias' if x else 'No bias')
+def test_batch_norm_linear_fusing(bias: bool):
+    input_shape = (2, 4, 6, 8)
+    example_input = (torch.ones(*input_shape),)
+
+    module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
+    graph_module = torch._export.capture_pre_autograd_graph(module, example_input)
+
+    # Fuse the BatchNorm with Linear.
+    pass_manager = NXPPyTorchPassManager(deepcopy(graph_module), [FuseBatchNormWithLinearPass])
+    transformed_module = pass_manager.run()
+
+    # Make sure the fusion worked.
+    og_nodes = list(graph_module.graph.nodes)
+    transformed_nodes = list(transformed_module.graph.nodes)
+
+    assert len(og_nodes) == (14 if bias else 13)
+    assert og_nodes[3 if bias else 2].target.__name__ == 'linear.default'
+
+    assert len(transformed_nodes) == 5
+    assert not any(node.op == 'call_function' and 'batch_norm' in node.target.__name__ for node in transformed_nodes)
+
+    # Verify that the behavior has not changed.
+    input_data = torch.randn(input_shape, dtype=torch.float32)
+    out1 = graph_module(input_data).detach().numpy()
+    out2 = transformed_module(input_data).detach().numpy()
+    assert np.allclose(out1, out2, atol=1.2e-7)
+
+
+@pytest.mark.parametrize('bias', [True, False], ids=lambda x: 'Bias' if x else 'No bias')
 def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
     input_shape = [4, 6, 8]
     module = ConvBatchNormModule(bias, len(input_shape), 4)
@@ -97,4 +140,21 @@ def test_batch_norm_conv_fusing__full_pipeline__2d(bias: bool):
     nodes = list(edge_program.graph.nodes)
 
     assert len(nodes) == 7
+    assert not any(node.op == 'call_function' and 'batch_norm' in node.target.__name__ for node in nodes)
+
+
+@pytest.mark.parametrize('bias', [True, False], ids=lambda x: 'Bias' if x else 'No bias')
+def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
+    input_shape = (2, 4, 6, 8)
+    module = LinearBatchNormModule(bias, 4, input_shape[-1], input_shape[1])
+
+    # Don't delegate the Linear node, because there seems to be a bug with the NeutronConverter/NeutronPartitioner.
+    #  But that doesn't affect the validity of this test.
+    AddMMConverter.supported_targets = []
+    MMConverter.supported_targets = []
+
+    edge_program = to_quantized_edge_program(module, tuple(input_shape)).exported_program()
+    nodes = list(edge_program.graph.nodes)
+
+    assert len(nodes) == 14
     assert not any(node.op == 'call_function' and 'batch_norm' in node.target.__name__ for node in nodes)

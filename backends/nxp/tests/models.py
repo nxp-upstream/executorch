@@ -83,6 +83,20 @@ class LinearModule(torch.nn.Module):
         return self.linear(x)
 
 
+class LinearSoftmaxModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.linear = torch.nn.Linear(12, 10)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.softmax(x)
+
+        return x
+
+
 class ConvFCSoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

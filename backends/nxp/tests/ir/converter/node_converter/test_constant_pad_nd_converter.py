@@ -8,9 +8,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, t
 from executorch.backends.nxp.tests.models import ConstantPadNDModule, ConstantPadNDConvModule, Conv2dConstantPadNDModule
 from torch.export import ExportedProgram
 
+
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
-    torch.seed()
+    torch.manual_seed(23)
+    np.random.seed(23)
+
 
 @pytest.mark.parametrize("constant", [0.0, 42., -13.37])
 def test_constant_pad_nd_conversion__specific_constant(constant):
@@ -19,8 +22,7 @@ def test_constant_pad_nd_conversion__specific_constant(constant):
 
     edge_program = to_edge_program(ConstantPadNDModule(paddings, constant), input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data)
 
@@ -41,7 +43,6 @@ def test_constant_pad_nd_quant_conversion__specific_constant(mocker, constant):
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    np.random.seed(23)
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
     convert_run_compare(edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.,
@@ -54,8 +55,7 @@ def test_constant_pad_nd_conversion__default_constant():
 
     edge_program = to_edge_program(ConstantPadNDModule(paddings), input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data)
 
@@ -84,8 +84,7 @@ def test_constant_pad_nd_conversion__default_constant():
 def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
     edge_program = to_edge_program(ConstantPadNDModule(paddings), input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data)
 
@@ -99,8 +98,7 @@ def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
 def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
     edge_program = to_edge_program(ConstantPadNDConvModule(paddings), input_shape).exported_program()  # Extra `Conv` after the padding.
 
-    torch.manual_seed(23)
-    input_data = torch.randn(input_shape, dtype=torch.float32).detach().numpy()
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
                         tflite_output_preprocess=ToNCHWPreprocess())

@@ -13,7 +13,7 @@ from torch.export import ExportedProgram
 
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
-    torch.seed()
+    torch.manual_seed(23)
     np.random.seed(23)
 
 

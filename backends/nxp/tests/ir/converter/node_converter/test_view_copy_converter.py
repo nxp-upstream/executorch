@@ -13,9 +13,12 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, t
 from executorch.backends.nxp.tests.executors import convert_run_compare, ToNHWCPreprocess, ToNCHWPreprocess
 from torch.export import ExportedProgram
 
+
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
-    torch.seed()
+    torch.manual_seed(23)
+    np.random.seed(23)
+
 
 class FormatlessToChannelsFirstModule(nn.Module):
     def __init__(self, channels: int, new_shape: Sequence[int]):
@@ -69,8 +72,7 @@ def test__channels_first_to_2d(mocker):
     torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = np.random.random(input_shape).astype('float32')
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
@@ -91,8 +93,7 @@ def test__channels_first_to_4d(mocker):
     torch_model = ConvReshapeModule(channels=input_shape[1], new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = np.random.random(input_shape).astype('float32')
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
@@ -113,8 +114,7 @@ def test__formatless_to_channels_first(mocker):
     torch_model = FormatlessToChannelsFirstModule(channels=new_shape[1], new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = np.random.random(input_shape).astype('float32')
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
@@ -135,8 +135,7 @@ def test__formatless_to_formatless(mocker):
     torch_model = FormatlessToFormatlessModule(new_shape=new_shape)
     edge_program = to_edge_program(torch_model, input_shape).exported_program()
 
-    torch.manual_seed(23)
-    input_data = np.random.random(input_shape).astype('float32')
+    input_data = np.random.random(input_shape).astype(np.float32)
 
     converter_spy = mocker.spy(ModelBuilder, "finish")
 
@@ -163,7 +162,6 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    np.random.seed(23)
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
     convert_run_compare(edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.)
@@ -185,7 +183,6 @@ def test_view_copy_w_conv_quant_conversion(mocker, input_shape, new_shape):
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    np.random.seed(23)
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
     convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),

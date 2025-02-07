@@ -8,9 +8,12 @@ from executorch.backends.nxp.tests.executors import convert_run_compare, ToNHWCP
 from executorch.backends.nxp.tests.models import Conv2dModule
 from torch.export import ExportedProgram
 
+
 @pytest.fixture(autouse=True)
 def reseed_model_per_test_run():
-    torch.seed()
+    torch.manual_seed(23)
+    np.random.seed(23)
+
 
 class Conv2dPermuteCopyModule(torch.nn.Module):
     def __init__(self, new_dims: tuple[int, ...]):
@@ -38,7 +41,6 @@ def test_permute_copy_quant_conversion__with_bias(mocker):
     # Capture converted program
     edge_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    np.random.seed(23)
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
     convert_run_compare(edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.,

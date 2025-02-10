@@ -11,12 +11,11 @@ from executorch.devtools.backend_debug import get_delegation_info
 _CURRENT_DIR = pathlib.Path(__file__).parent
 _PROJECT_DIR = _CURRENT_DIR.parent.parent.parent
 
-QUANTIZED_OPS_AOT_LIB_PATH = _PROJECT_DIR / "cmake-build-debug" / "kernels" / "quantized" / "libquantized_ops_aot_lib.so"
+_QUANTIZED_OPS_AOT_LIB_PATH = (_PROJECT_DIR / "pip-out" / "temp.linux-x86_64-cpython-310" / "cmake-out" /
+                              "kernels" / "quantized" / "libquantized_ops_aot_lib.so")
 
-
-@pytest.mark.skipif(not os.path.exists(QUANTIZED_OPS_AOT_LIB_PATH), reason="Quant OPS AoT library file not found.")
 def test_conv_fc_softmax__to_executorch_program():
-    torch.ops.load_library(str(QUANTIZED_OPS_AOT_LIB_PATH))
+    torch.ops.load_library(str(_QUANTIZED_OPS_AOT_LIB_PATH))
 
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)

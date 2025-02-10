@@ -1,3 +1,8 @@
+# Copyright 2024-2025 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import torch
 from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
@@ -5,6 +10,7 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 from executorch import exir
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.extension.export_util.utils import export_to_edge
 from executorch.exir import EdgeProgramManager, ExecutorchBackendConfig, ExecutorchProgramManager
@@ -26,6 +32,11 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, target
     example_input = (torch.ones(*input_shape),)
 
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    # Run pre-processing passes of the float32 aten dialect program.
+    pass_manager = NXPPyTorchPassManager(exir_program_aten)
+    pass_manager.run()  # All passes by default.
+
     exir_program_aten_quant = _quantize_model(exir_program_aten, calibration_inputs)
     edge_program_manager = export_to_edge(exir_program_aten_quant, example_input)
 

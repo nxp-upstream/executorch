@@ -206,3 +206,18 @@ def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, a
                                               " number of outputs. Testing is not implemented for this case.")
 
     return tflite_executor, edge_program_executor
+
+
+class OverrideSupportedTargets:
+
+    def __init__(self, converter_class, *, new_targets):
+        self._converter_class = converter_class
+        self._new_targets = new_targets
+
+        self._old_targets = self._converter_class.supported_targets
+
+    def __enter__(self):
+        self._converter_class.supported_targets = self._new_targets
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._converter_class.supported_targets = self._old_targets

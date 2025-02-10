@@ -11,6 +11,7 @@ from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_conv_pass impor
 from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_linear_pass import FuseBatchNormWithLinearPass
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executors import OverrideSupportedTargets
 
 
 @pytest.fixture(autouse=True)
@@ -150,11 +151,10 @@ def test_batch_norm_linear_fusing__full_pipeline(bias: bool):
 
     # Don't delegate the Linear node, because there seems to be a bug with the NeutronConverter/NeutronPartitioner.
     #  But that doesn't affect the validity of this test.
-    AddMMConverter.supported_targets = []
-    MMConverter.supported_targets = []
-
-    edge_program = to_quantized_edge_program(module, tuple(input_shape)).exported_program()
-    nodes = list(edge_program.graph.nodes)
+    with OverrideSupportedTargets(AddMMConverter, new_targets=[]):
+        with OverrideSupportedTargets(MMConverter, new_targets=[]):
+            edge_program = to_quantized_edge_program(module, tuple(input_shape)).exported_program()
+            nodes = list(edge_program.graph.nodes)
 
     assert len(nodes) == 14
     assert not any(node.op == 'call_function' and 'batch_norm' in node.target.__name__ for node in nodes)

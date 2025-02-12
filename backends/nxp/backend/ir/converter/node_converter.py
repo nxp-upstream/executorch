@@ -18,7 +18,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 class Target(Enum):
     IGNORE = 'ignore'  # No target platform. Any target specific restrictions will be ignored.
 
-    RT700 = 'rt700'
+    RT700 = 'imxrt700'
     IMX95 = 'imx95'
 
     @classmethod

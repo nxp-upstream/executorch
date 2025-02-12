@@ -20,6 +20,6 @@ def test_conv2d_neutron_conversion():
     tflite_model, _ = edge_program_converter.convert_program(edge_program_manager.exported_program())
 
     neutron_converter_manager = NeutronConverterManager()
-    neutron_model = neutron_converter_manager.convert(tflite_model)
+    neutron_model = neutron_converter_manager.convert(tflite_model, "imxrt700")
 
     assert len(neutron_model), "Produced NeutronGraph-based TFLite model has zero length!"

@@ -130,6 +130,12 @@ if __name__ == "__main__":
         help="Flag for producing ArmBackend delegated model",
     )
     parser.add_argument(
+        "--target",
+        required=False,
+        default="imxrt700",
+        help="Platform for running the delegated model",
+    )
+    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
@@ -220,7 +226,7 @@ if __name__ == "__main__":
         edge_program = edge_program.to_backend(
             NeutronPartitioner(
                 generate_neutron_compile_spec(
-                    "rt700"
+                    args.target
                 )
             )
         )

@@ -44,7 +44,7 @@ class NeutronCompileSpecBuilder:
         Generate compile spec for Neutron NPU
 
         Args:
-            config: Neutron accelerator configuration, e.g. "rt700"
+            config: Neutron accelerator configuration, e.g. "imxrt700"
             extra_flags: Extra flags for the Neutron compiler
         """
         try:
@@ -107,9 +107,12 @@ class NeutronBackend(BackendDetails):
         output_format = ""
         compile_flags = []
         binary = bytes()
+        target = ""
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
+            if spec.key == "target":
+                target = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
 
@@ -136,8 +139,7 @@ class NeutronBackend(BackendDetails):
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
 
-            # Call the neutron converter with the TFLite model.
-            neutron_model = NeutronConverterManager().convert(tflite_model)
+            neutron_model = NeutronConverterManager().convert(tflite_model, target)
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):

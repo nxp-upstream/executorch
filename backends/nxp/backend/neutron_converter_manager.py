@@ -13,7 +13,7 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    def convert(self, tflite_model: bytes, target='imxrt700') -> bytes:
+    def convert(self, tflite_model: bytes, target: str) -> bytes:
         cctx = neutron_converter.CompilationContext()
         cctx.targetOpts = neutron_converter.getNeutronTarget(target)
         model_converted = neutron_converter.convertModel(list(tflite_model), cctx)

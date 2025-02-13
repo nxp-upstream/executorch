@@ -247,7 +247,6 @@ if __name__ == "__main__":
                 generate_neutron_compile_spec(
                     args.target,
                     operators_not_to_delegate=args.operators_not_to_delegate
->>>>>>> 295ca4dfb28cf93049d03defcd2d84058772e3d4
                 )
             )
         )

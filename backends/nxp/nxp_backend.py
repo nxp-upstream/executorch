@@ -92,7 +92,7 @@ class NeutronCompileSpecBuilder:
 
 
 def generate_neutron_compile_spec(
-    config: str,  # The target platform. For example "rt700".
+    config: str,  # The target platform. For example "imxrt700".
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,

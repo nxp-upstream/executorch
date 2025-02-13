@@ -27,7 +27,7 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
     return m
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operators_not_to_delegate: list[str] = None, target="rt700") -> EdgeProgramManager:
+def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operators_not_to_delegate: list[str] = None, target="imxrt700") -> EdgeProgramManager:
     calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
     example_input = (torch.ones(*input_shape),)
 

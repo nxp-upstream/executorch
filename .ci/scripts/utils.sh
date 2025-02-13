@@ -16,14 +16,19 @@ retry () {
     "$@" || (sleep 30 && reset_buck && "$@") || (sleep 60 && reset_buck && "$@")
 }
 
+clean_executorch_install_folders() {
+  ./install_requirements.sh --clean
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
-  # current directory. The --extra-index-url options tell pip to look on the
-  # pytorch servers for nightly and pre-release versions of torch packages.
-  pip install . --no-build-isolation -v \
-      --extra-index-url https://download.pytorch.org/whl/test/cpu \
-      --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  # current directory.
+  if [[ "${1:-}" == "use-pt-pinned-commit" ]]; then
+    ./install_requirements.sh --pybind xnnpack --use-pt-pinned-commit
+  else
+    ./install_requirements.sh --pybind xnnpack
+  fi
   # Just print out the list of packages for debugging
   pip list
 }
@@ -33,42 +38,6 @@ install_pip_dependencies() {
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
   popd || return
-}
-
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
-install_pytorch_and_domains() {
-  pushd .ci/docker || return
-  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  popd || return
-
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || return
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
-
-  export _GLIBCXX_USE_CXX11_ABI=0
-  # Then build and install PyTorch
-  python setup.py bdist_wheel
-  pip install "$(echo dist/*.whl)"
-
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || return
-  # Print sccache stats for debugging
-  sccache --show-stats || true
 }
 
 install_flatc_from_source() {
@@ -109,7 +78,8 @@ build_executorch_runner_buck2() {
 build_executorch_runner_cmake() {
   CMAKE_OUTPUT_DIR=cmake-out
   # Build executorch runtime using cmake
-  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
+  clean_executorch_install_folders
+  mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
@@ -138,7 +108,7 @@ build_executorch_runner() {
 
 cmake_install_executorch_lib() {
   echo "Installing libexecutorch.a and libportable_kernels.a"
-  rm -rf cmake-out
+  clean_executorch_install_folders
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
@@ -148,10 +118,26 @@ cmake_install_executorch_lib() {
 }
 
 download_stories_model_artifacts() {
-    # Download stories110M.pt and tokenizer from Github
+  # Download stories110M.pt and tokenizer from Github
   curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
   curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
   # Create params.json file
   touch params.json
   echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+}
+
+do_not_use_nightly_on_ci() {
+  # An assert to make sure that we are not using PyTorch nightly on CI to prevent
+  # regression as documented in https://github.com/pytorch/executorch/pull/6564
+  TORCH_VERSION=$(pip list | grep -w 'torch ' | awk -F ' ' {'print $2'} | tr -d '\n')
+
+  # The version of PyTorch building from source looks like 2.6.0a0+gitc8a648d that
+  # includes the commit while nightly (2.6.0.dev20241019+cpu) or release (2.6.0)
+  # won't have that. Note that we couldn't check for the exact commit from the pin
+  # ci_commit_pins/pytorch.txt here because the value will be different when running
+  # this on PyTorch CI
+  if [[ "${TORCH_VERSION}" != *"+git"* ]]; then
+    echo "Unexpected torch version. Expected binary built from source, got ${TORCH_VERSION}"
+    exit 1
+  fi
 }

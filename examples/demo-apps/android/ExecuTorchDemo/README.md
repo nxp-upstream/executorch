@@ -53,7 +53,7 @@ For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](build-
 After generating the model, copy the model to `assets` directory.
 
 ```bash
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8450 -s <adb_connected_device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8450 -s <adb_connected_device_serial>
 cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
@@ -69,7 +69,9 @@ We build the required ExecuTorch runtime library to run the model.
 export ANDROID_NDK=<path-to-android-ndk>
 export ANDROID_ABI=arm64-v8a
 
-rm -rf cmake-android-out && mkdir cmake-android-out
+# Run the following lines from the `executorch/` folder
+./install_requirements.sh --clean
+mkdir cmake-android-out
 
 # Build the core executorch library
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
@@ -78,6 +80,8 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install
@@ -110,7 +114,8 @@ export ANDROID_NDK=<path-to-android-ndk>
 export ANDROID_ABI=arm64-v8a
 export QNN_SDK_ROOT=<path-to-qnn-sdk>
 
-rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
+./install_requirements.sh --clean
+mkdir cmake-android-out
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
@@ -119,6 +124,8 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install

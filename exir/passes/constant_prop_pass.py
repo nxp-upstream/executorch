@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -126,6 +128,10 @@ def get_propagated_const_tensor_dict(
             node.args,
             exported_program,
             const_node_to_tensor,
+        ) or not is_const(
+            node.kwargs,
+            exported_program,
+            const_node_to_tensor,
         ):
             continue
 
@@ -164,7 +170,22 @@ def replace_with_constant_node(
     exported_program: ExportedProgram,
 ) -> tuple[torch.fx.Node, str]:
     # Add `prop_constant_tensor` to program.state_dict.
-    prop_constant_tensor_fqn = f"_prop_tensor_constant{len(exported_program.constants)}"
+    prefix = "_prop_tensor_constant"
+    prop_constant_tensor_fqn = f"{prefix}{len(exported_program.constants)}"
+    # If prop_constant_tensor_fqn already exists in the state dict, we need
+    # to create a new name. Find the largest suffix of "_prop_tensor_constant",
+    # and increment it by 1 to form the new name.
+    if prop_constant_tensor_fqn in exported_program.constants:
+        suffix = 1 + max(
+            (
+                int(name[len(prefix) :])
+                for name in exported_program.constants.keys()
+                if name.startswith(prefix) and name[len(prefix) :].isdigit()
+            ),
+            default=-1,
+        )
+        prop_constant_tensor_fqn = f"{prefix}{suffix}"
+
     exported_program.constants[prop_constant_tensor_fqn] = prop_constant_tensor
 
     # Insert a new placeholder node for the propagated constant tensor.
@@ -206,11 +227,11 @@ def erase_constant_node(
 ) -> None:
     # Remove corresponding tensor from param/constants dict.
     signature = exported_program.graph_signature
-    if name := signature.inputs_to_parameters.pop(node.name, None):
+    if name := signature.inputs_to_parameters.get(node.name, None):
         exported_program.state_dict.pop(name, None)
-    elif name := signature.inputs_to_lifted_tensor_constants.pop(node.name, None):
+    elif name := signature.inputs_to_lifted_tensor_constants.get(node.name, None):
         exported_program.constants.pop(name, None)
-    elif name := signature.inputs_to_buffers.pop(node.name, None):
+    elif name := signature.inputs_to_buffers.get(node.name, None):
         exported_program.constants.pop(name, None)
         exported_program.state_dict.pop(name, None)
 

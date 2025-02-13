@@ -31,12 +31,23 @@ class OpConcat:
 
 
 @dataclass(init=False, frozen=True)
+class OpContextLoader:
+    namespace: str = "qaisw"
+    meta_ctx_bin: str = "qnn_context_binary"
+
+
+@dataclass(init=False, frozen=True)
 class OpConv2d:
     op_name: str = "Conv2d"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"
     param_dilation: str = "dilation"
+
+
+@dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
 
 
 @dataclass(init=False, frozen=True)
@@ -75,6 +86,11 @@ class OpElementWiseCeil:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseCos:
+    op_name: str = "ElementWiseCos"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
     op_name: str = "ElementWiseDivide"
 
@@ -103,6 +119,11 @@ class OpElementWiseRsqrt:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSin:
+    op_name: str = "ElementWiseSin"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
 
@@ -111,13 +132,6 @@ class OpElementWiseSubtract:
 class OpExpandDims:
     op_name: str = "ExpandDims"
     param_axis: str = "axis"
-
-
-@dataclass(init=False, frozen=True)
-class OpReduceSum:
-    op_name: str = "ReduceSum"
-    param_axes: str = "axes"
-    param_keep_dims: str = "keep_dims"
 
 
 @dataclass(init=False, frozen=True)
@@ -133,13 +147,20 @@ class OpGather:
 
 
 @dataclass(init=False, frozen=True)
+class OpGatherND:
+    op_name: str = "GatherNd"
+    param_batch_dims: str = "batch_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpGelu:
     op_name: str = "Gelu"
 
 
-@dataclass(init=False, frozen=True)
-class OpSqrt:
-    op_name: str = "ElementWiseSquareRoot"
+class OpGroupNorm:
+    op_name: str = "GroupNorm"
+    param_epsilon = "epsilon"
+    param_group = "group"
 
 
 @dataclass(init=False, frozen=True)
@@ -236,6 +257,13 @@ class OpReduceMean:
 
 
 @dataclass(init=False, frozen=True)
+class OpReduceSum:
+    op_name: str = "ReduceSum"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpRelu:
     op_name: str = "Relu"
 
@@ -264,6 +292,19 @@ class OpResizeNearestNeighbor:
     op_name: str = "ResizeNearestNeighbor"
     param_align_corners: str = "align_corners"
     param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
+class OpRmsNorm:
+    op_name: str = "RmsNorm"
+    param_epsilon: str = "epsilon"
+    param_axes: str = "axes"
+
+
+@dataclass(init=False, frozen=True)
+class OpScatterNd:
+    op_name: str = "ScatterNd"
+    param_reduction: str = "reduction"
 
 
 @dataclass(init=False, frozen=True)
@@ -297,6 +338,11 @@ class OpSplit:
 
 
 @dataclass(init=False, frozen=True)
+class OpSqrt:
+    op_name: str = "ElementWiseSquareRoot"
+
+
+@dataclass(init=False, frozen=True)
 class OpSqueeze:
     op_name: str = "Squeeze"
 
@@ -323,6 +369,22 @@ class OpTile:
 
 
 @dataclass(init=False, frozen=True)
+class OpTopK:
+    op_name: str = "TopK"
+    param_k: str = "k"
+    param_largest: str = "largest"
+
+
+@dataclass(init=False, frozen=True)
 class OpTranspose:
     op_name: str = "Transpose"
     param_perm: str = "perm"
+
+
+@dataclass(init=False, frozen=True)
+class OpTransposeConv2d:
+    op_name: str = "TransposeConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_output_padding: str = "output_padding"

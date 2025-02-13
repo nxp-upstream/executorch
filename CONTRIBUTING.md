@@ -23,6 +23,8 @@ We actively welcome your pull requests (PRs).
    See the [testing section](#testing) for more information.
 1. If you've changed APIs or added a new tool or feature, [update the
    documentation](#updating-documentation).
+1. If you added an experimental API or deprecated an existing API, follow the
+   [API Life Cycle and Deprecation Policy](/docs/source/api-life-cycle.md).
 1. Make sure your code follows the [style guides](#coding-style) and passes the
    [lint checks](#lintrunner).
 1. If you haven't already, complete the [Contributor License Agreement ("CLA")](#contributor-license-agreement-cla).
@@ -129,9 +131,7 @@ for detailed advice.
 
 #### C++ language version
 
-**C++11.**
-
-NOTE: The code does not yet fully conform to this, and some files require C++17.
+**C++17.**
 
 Rationale: This is a compromise between being compatible with older, proprietary
 toolchains, and having access to relatively modern C++ features.
@@ -242,14 +242,27 @@ for basics.
    - Give the PR a clear and thorough description. Don't just describe what the PR
      does: the diff will do that. Explain *why* you are making this change, in a
      way that will make sense to someone years from now.
-   - Add the line `Test Plan:` (with that spelling, capitalization, and trailing
-     colon character), followed by lines containing repeatable instructions for
+   - Explain how you have tested your changes by including repeatable instructions for
      testing the PR.
      - If you added tests, this can be as simple as the command you used to run the
        tests.
      - If you tested the PR manually, include the steps and the outputs. Help a
        future editor understand how to test the code that you're modifying
        today.
+   - If your PR contains or is representative of a feature/bug fix that should be
+     called out in the release notes, please add a label for "Release notes: \<area\>",
+	 where \<area\> describes which part of ExecuTorch the change pertains to, e.g.
+	 "Release notes: runtime". Here are all of the categories:
+     - `Release notes: runtime`: changes related to the core runtime which loads the program methods, initializes delegates, and runs the lowered graph.
+     - `Release notes: exir`: changes to any internal representations, such as any edge-related dialects. Also any changes to passes that may modify the exir, such as memory planning.
+     - `Release notes: quantization`: changes to quantization.
+     - `Release notes: ops & kernels`: changes to the opset and any new / changed kernel implementations.
+     - `Release notes: api`: changes to public facing apis (any interfaces, pybinded runtime methods, etc.).
+     - `Release notes: backends`: changes to any of the backend delegates.
+     - `Release notes: build`: changes related to the build system, including major dependency upgrades, notable build flags, optimizations, etc.
+     - `Release notes: devtools`: changes to any of ExecuTorch's developer tools, for example the debugger & profiler.
+     - `Release notes: examples`: changes to any code under `examples/`.
+     - `Release notes: misc`: anything notable that doesn't belong in the above categories.
    - See https://github.com/pytorch/executorch/pull/3612 for an example PR that
      follows this advice.
 1. Before asking for a review, ensure that all [CI (continuous integration)
@@ -270,10 +283,15 @@ for basics.
    - If the reviewers have requests or questions, follow up with them.
    - The goal of the reviewer is to ensure that the code in the `main` branch of
      the repo is consistent, maintainable, and of high quality.
-1. Once approved, your reviewer will import the PR into Meta's internal system
-   and merge it from there.
-   - If the PR is approved and not merged within a few business days, please
-     comment on the PR to ask about its status.
+1. Once the PR has been approved,
+   - If you have the "write permission" in this repo, you can merge it yourself
+     by clicking the "Squash and merge" button once it is green and all CI
+     signals are passing.
+   - If you don't have "write permission" in this repo, the reviewer will take
+     care of the PR. The reviewer may import the PR into Meta's internal system
+     to validate it against internal CI.
+   - If the PR is approved but not merged within 5 business days, please comment
+     on the PR to ask about its status.
    - Note that if the `main` [CI](#continuous-integration) jobs are broken, we
      will only merge PRs that fix the broken jobs until all critical jobs are
      fixed.

@@ -6,7 +6,7 @@ import torch
 
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_executorch_program
 from executorch.backends.nxp.tests.models import ConvFCSoftmaxModule
-from executorch.exir.backend.utils import get_delegation_info
+from executorch.devtools.backend_debug import get_delegation_info
 
 _CURRENT_DIR = pathlib.Path(__file__).parent
 _PROJECT_DIR = _CURRENT_DIR.parent.parent.parent

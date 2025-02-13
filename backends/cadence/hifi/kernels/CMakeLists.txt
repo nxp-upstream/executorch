@@ -9,14 +9,28 @@ add_library(
   cadence_kernels
   kernels.cpp
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/matmul_asym8uxasym8u_asym8u.cpp
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_broadcast_32.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_add_f32_broadcast.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_div_f32_broadcast.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_div_mode_f32_broadcast.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_minimum_maximum_f32.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_mul_f32_broadcast.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_pow_f32.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_elm_where_f32xf32_f32.c
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_reduce_32_32.c
 )
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 target_include_directories(
   cadence_kernels
-  PUBLIC .
-         ${NN_LIB_BASE_DIR}/xa_nnlib/algo/common/include/
-         ${NN_LIB_BASE_DIR}/xa_nnlib/include/nnlib
-         ${NN_LIB_BASE_DIR}/xa_nnlib/include
-         ${NN_LIB_BASE_DIR}/xa_nnlib/algo/ndsp/hifi4/include/
-         ${NXP_SDK_ROOT_DIR}/middleware/dsp/naturedsp/hifi4/include/
+  PUBLIC
+    .
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/common/include/
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include/nnlib
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include
+    ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/ndsp/hifi4/include/
+  ${_common_include_directories}
 )
+
+target_link_libraries(cadence_kernels PRIVATE xa_nnlib)

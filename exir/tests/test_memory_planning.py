@@ -14,12 +14,15 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
+    greedy,
+    naive,
     Verifier,
 )
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
     MemoryPlanningPass,
@@ -208,7 +211,7 @@ class MultiplePoolsToyModel(torch.nn.Module):
 
 def maketest(
     module_cls: Type[torch.nn.Module],
-    criteria: Optional[List[Tuple[str, bool]]] = None,
+    criteria: Optional[List[Tuple[Callable[..., List[int]], bool]]] = None,
     extra_check: Optional[Callable[..., None]] = None,
     use_functionalization: bool = True,
     alloc_graph_input: bool = True,
@@ -222,14 +225,18 @@ def maketest(
         if not criteria:
             criteria = [
                 # naive algorithm does not reuse tensor storages
-                ("naive", False),
+                (naive, False),
                 # greedy algorithm should reuse tensor storages in the testing model
-                ("greedy", True),
+                (greedy, True),
             ]
 
         for algo, expect_reuse in criteria:
-            print(f"algo {algo}, expect_reuse {expect_reuse}")
+            print(
+                f"algo {getattr(algo, '__name__', repr(algo))}, expect_reuse {expect_reuse}"
+            )
             eager_module = module_cls().eval()
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             inputs = eager_module.get_random_inputs()
             graph_module = (
                 to_edge(
@@ -353,8 +360,8 @@ class TestMemoryPlanning(unittest.TestCase):
     test_return_two: Callable[..., None] = maketest(
         ModuleReturnTwo,
         criteria=[
-            ("naive", False),
-            ("greedy", True),
+            (naive, False),
+            (greedy, True),
         ],
     )
 
@@ -363,8 +370,8 @@ class TestMemoryPlanning(unittest.TestCase):
     test_list_arg: Callable[..., None] = maketest(
         ModuleListArg,
         criteria=[
-            ("naive", False),
-            ("greedy", True),
+            (naive, False),
+            (greedy, True),
         ],
         extra_check=ModuleListArg.extra_check,
     )
@@ -466,12 +473,12 @@ class TestMisc(unittest.TestCase):
     @parameterized.expand(
         [
             (
-                "naive",
+                naive,
                 [(1, 0), (3, 0), (1, 4), (3, 4), (1, 8)],
                 [0, 12, 0, 8],
             ),
             (
-                "greedy",
+                greedy,
                 [(1, 0), (3, 0), (1, 4), (3, 4), (1, 0)],
                 [0, 8, 0, 8],
             ),
@@ -479,7 +486,7 @@ class TestMisc(unittest.TestCase):
     )
     def test_multiple_pools(
         self,
-        algo: str,
+        algo: Callable[..., List[int]],
         expected_allocs: List[Tuple[int, int]],
         expected_bufsizes: List[int],
     ) -> None:
@@ -550,9 +557,7 @@ class TestMisc(unittest.TestCase):
 
         ep_no_input_planning = to_edge(export(model, inputs)).to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=False
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
@@ -572,9 +577,7 @@ class TestMisc(unittest.TestCase):
 
         ep_input_planning = to_edge(export(model, inputs)).to_executorch(
             config=ExecutorchBackendConfig(
-                memory_planning_pass=MemoryPlanningPass(
-                    "greedy", alloc_graph_input=True
-                ),
+                memory_planning_pass=MemoryPlanningPass(alloc_graph_input=True),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
@@ -591,3 +594,65 @@ class TestMisc(unittest.TestCase):
             num_placeholders,
             5,
         )
+
+    def test_placeholder_lifetime(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(5, 5)
+
+            def forward(self, a, b, x):
+                a = a + b
+                b = a + b
+                y = self.linear(x)
+                return a, b, y
+
+        model = TestModel()
+        example_inputs = (torch.rand(1, 6, 2), torch.rand(1, 6, 2), torch.randn(5, 5))
+        exported_model = torch.export.export(model, example_inputs)
+        edge = to_edge(exported_model)
+
+        class TestPass(ExportPass):
+            def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+                permute_dims = [1, 0, 2]
+                for node in graph_module.graph.nodes:
+                    if node.op == "placeholder" and str(node) == "a":
+                        inverse_dims = [
+                            permute_dims.index(x) for x in range(len(permute_dims))
+                        ]
+
+                        with graph_module.graph.inserting_after(node):
+                            permute = graph_module.graph.call_function(
+                                exir_ops.edge.aten.permute_copy.default,
+                                args=(node, inverse_dims),
+                            )
+                            permute.meta = node.meta.copy()
+                            node.meta["val"] = node.meta["val"].permute(permute_dims)
+                            node.replace_all_uses_with(
+                                permute, lambda x, permute=permute: x is not permute
+                            )
+                            break
+                return PassResult(graph_module, True)
+
+        edge = edge.transform([TestPass()])
+        et = edge.to_executorch()
+        et_program = et.executorch_program
+        inputs = et_program.execution_plan[0].inputs
+        self.assertNotEqual(
+            et_program.execution_plan[0]  # pyre-ignore
+            .values[inputs[0]]
+            .val.allocation_info.memory_offset_low,
+            et_program.execution_plan[0]  # pyre-ignore
+            .values[inputs[1]]
+            .val.allocation_info.memory_offset_low,
+        )
+
+        constants = 0
+        for node in et.exported_program().graph_module.graph.nodes:
+            if node.op == "placeholder" and node.meta.get("spec"):
+                meta_spec = node.meta["spec"]
+                if meta_spec.const is True:
+                    constants += 1
+                    self.assertIsNone(node.meta["spec"].mem_offset)
+                    self.assertIsNone(node.meta["spec"].mem_id)
+        self.assertEqual(constants, 2)

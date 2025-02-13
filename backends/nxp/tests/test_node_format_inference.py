@@ -9,7 +9,7 @@ import torch
 from executorch import exir
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.backends.nxp.tests.models import Conv2dModule, SoftmaxModule, MaxPool2dModule
-from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
+from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 
 def test_convolution():
@@ -59,10 +59,10 @@ def test_maxpool2d():
 
     # We need to create custom model verifier with max_pool2d added as exception.
     # Otherwise, we get violation that this op is not part of ATen Core ops.
-    edge_program._verifier = EXIREdgeDialectVerifier(
+    edge_program._verifiers = [EXIREdgeDialectVerifier(
         class_only=True,
         exception_list=[torch.ops.aten.max_pool2d.default]
-    )
+    )]
 
     # Remove MaxPool-related "getitem" nodes from graph
     edge_program = XNNPACKPassManager(edge_program, [RemoveGetItemPass]).transform()

@@ -20,17 +20,16 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
 functions_converters = {
-    exir_ops.edge.aten.convolution.default: ConvolutionConverter,
-    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
     exir_ops.edge.aten.addmm.default: AddMMConverter,
+    exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
+    exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
     exir_ops.edge.aten.mm.default: MMConverter,
+    exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,
+    exir_ops.edge.aten.relu.default: ReLUConverter,
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
-    exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
-    exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
-    exir_ops.edge.aten.relu.default: ReLUConverter,
-    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
-
 }
 
 

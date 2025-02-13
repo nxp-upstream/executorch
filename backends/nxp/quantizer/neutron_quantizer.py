@@ -10,14 +10,15 @@ from typing import List, Type
 
 import torch
 from torch import fx
+from torch._ops import OpOverload
+from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import (
     FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,
 )
+from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
-from torch.ao.quantization.quantizer import QuantizationSpec
-from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver, PerChannelMinMaxObserver
 
 from executorch.backends.cadence.aot.quantizer.patterns import (
     QuantizationPattern,
@@ -27,7 +28,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     Conv2dPattern,
     LinearPattern,
 )
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceGenericQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceAtenQuantizer
 
 # Quantization Specification used by Neutron NPU
 act_qspec = QuantizationSpec(
@@ -65,6 +66,7 @@ wgt_fc_qspec = QuantizationSpec(
 # Is set by the *PatternQuantizer directly.
 bias_qspec = None
 
+
 class SharedSpecPattern(QuantizationPattern):
     """
     Quantization pattern for shared quantization.
@@ -100,13 +102,15 @@ class SharedSpecPattern(QuantizationPattern):
         # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
         assert False
 
+
 class MaxPoolPattern(SharedSpecPattern):
     """
     Quantizer for MaxPool2D operator.
     """
 
     def partition_types(self):
-        return [torch.nn.MaxPool2d]
+        return [torch.ops.aten.max_pool2d.default]
+
 
 class AvgPoolPattern(SharedSpecPattern):
     """
@@ -114,25 +118,16 @@ class AvgPoolPattern(SharedSpecPattern):
     """
 
     def partition_types(self):
-        return [torch.nn.AvgPool2d]
+        return [torch.ops.aten.avg_pool2d.default]
 
 
-class ConstPadNdPattern(SharedSpecPattern):
+class PadPattern(SharedSpecPattern):
     """
-    Quantizer for Const_pad_nd operator.
-    """
-
-    def partition_types(self):
-        return [torch._C._nn.pad]
-
-
-class PermuteCopyPattern(SharedSpecPattern):
-    """
-    Quantizer for Permute_copy operator.
+    Quantizer for Pad operator.
     """
 
     def partition_types(self):
-        return [torch.permute]
+        return [torch.ops.aten.pad.default]
 
 
 class ReluPattern(SharedSpecPattern):
@@ -141,16 +136,25 @@ class ReluPattern(SharedSpecPattern):
     """
 
     def partition_types(self):
-        return [torch.nn.modules.activation.ReLU]
+        return [torch.ops.aten.relu.default]
 
 
-class ViewCopyPattern(SharedSpecPattern):
+class ReshapePattern(SharedSpecPattern):
     """
-    Quantizer for View_copy operator.
+    Quantizer for Reshape operator.
     """
 
     def partition_types(self):
-        return [torch.reshape]
+        return [torch.ops.aten.reshape.default]
+
+
+class PermutePattern(SharedSpecPattern):
+    """
+    Quantizer for Permute operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.permute.default]
 
 
 class SoftMaxPattern(QuantizationPattern):
@@ -160,8 +164,8 @@ class SoftMaxPattern(QuantizationPattern):
     The quantization of Softmax output is fixed to scale 1/256, zero point -128, dtype int8.
     """
 
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.Softmax]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.softmax.int]
 
     def get_anchors(
             self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -206,17 +210,17 @@ class NeutronQuantizer(ComposableQuantizer):
         )
         super().__init__(
             [
-                CadenceGenericQuantizer(AddmmPattern(), static_fc_qconfig), # TODO need to be verified, not use by CifarNet
-                CadenceGenericQuantizer(Conv1dPattern(), static_qconfig),
-                CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
-                CadenceGenericQuantizer(LinearPattern(), static_fc_qconfig),
-                CadenceGenericQuantizer(MaxPoolPattern(), static_qconfig),
-                CadenceGenericQuantizer(SoftMaxPattern(), static_qconfig),
-                CadenceGenericQuantizer(ViewCopyPattern(), static_qconfig),
-                CadenceGenericQuantizer(ConstPadNdPattern(), static_qconfig),
-                CadenceGenericQuantizer(PermuteCopyPattern(), static_qconfig),
-                CadenceGenericQuantizer(ReluPattern(), static_qconfig),
-                CadenceGenericQuantizer(AvgPoolPattern(), static_qconfig),
+                CadenceAtenQuantizer(AddmmPattern(), static_fc_qconfig),
+                CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
+                CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
+                CadenceAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                CadenceAtenQuantizer(MaxPoolPattern(), static_qconfig),
+                CadenceAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReshapePattern(), static_qconfig),
+                CadenceAtenQuantizer(PermutePattern(), static_qconfig),
+                CadenceAtenQuantizer(PadPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
             ]
         )
 

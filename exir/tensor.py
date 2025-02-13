@@ -18,8 +18,12 @@ from typing import Dict, List, Optional, Tuple, Union
 import executorch.exir.schema as schema
 import torch
 from executorch.exir.error import internal_assert
-from executorch.exir.schema import ScalarType, TensorShapeDynamism
+from executorch.exir.schema import ExtraTensorInfo, ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
+
+
+class AddressSpaceOverflowException(Exception):
+    pass
 
 
 def num_bytes_from_shape_and_dtype(shape: torch.Size, dtype: torch.dtype) -> int:
@@ -128,6 +132,7 @@ class TensorSpec:
         is_sparse: bool = False,
         const: bool = False,
         requires_grad: bool = False,
+        extra_tensor_info: Optional[ExtraTensorInfo] = None,
     ) -> None:
         self.scalar_type = dtype
         self.const = const
@@ -142,6 +147,7 @@ class TensorSpec:
         self.is_sparse = is_sparse
         self.init_mem_planning_fields()
         self.shape_dynamism: TensorShapeDynamism = determine_tensor_dynanism(self.shape)
+        self.extra_tensor_info = extra_tensor_info
 
     @property
     def allocated_memory(self) -> int:
@@ -258,6 +264,7 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.uint16: ScalarType.UINT16,
 }
 
 
@@ -296,7 +303,9 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     memory_offset_low = mem_offset & ((1 << 32) - 1)
     memory_offset_high = mem_offset >> 32
     if memory_offset_high >= 1 << 32:
-        raise ValueError(f"mem_offset {mem_offset} does not fit in 64 bits")
+        raise AddressSpaceOverflowException(
+            f"mem_offset {mem_offset} does not fit in 64 bits"
+        )
 
     allocation_info = schema.AllocationDetails(
         memory_id=mem_id,
@@ -307,7 +316,7 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
 
 
 def make_tensor_value(
-    constant_buffer_idx: int,
+    data_buffer_idx: int,
     allocation_info: Optional[schema.AllocationDetails],
     spec: TensorSpec,
 ) -> schema.Tensor:
@@ -325,11 +334,6 @@ def make_tensor_value(
         else:
             return x
 
-    internal_assert(
-        not spec.const or not allocation_info,
-        "We only create non-constant tensors as the constant tensors are directly written to buffer",
-    )
-
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
@@ -340,10 +344,11 @@ def make_tensor_value(
         sizes=tensor_size,
         dim_order=tensor_dim_order,
         requires_grad=spec.requires_grad,
-        constant_buffer_idx=constant_buffer_idx,
+        data_buffer_idx=data_buffer_idx,
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,
+        extra_tensor_info=spec.extra_tensor_info,
     )
     return flatbuffer_tensor
 

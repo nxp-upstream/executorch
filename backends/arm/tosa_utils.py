@@ -3,16 +3,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
 import os
-
-import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
+from typing import Any
 
 import numpy as np
 import serializer.tosa_serializer as ts
+import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
+from torch.fx import Node
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -39,10 +43,10 @@ def dbg_node(node):
 
 
 # Output TOSA flatbuffer and test harness file
-def dbg_tosa_dump(tosa_graph, path):
-    filename = "output.tosa"
+def dbg_tosa_dump(tosa_graph: ts.TosaSerializer, path: str, suffix: str = ""):
+    filename = f"output{suffix}.tosa"
 
-    logger.info(f"Emitting debug output to {path}")
+    logger.info(f"Emitting debug output to: {path=}, {suffix=}")
 
     os.makedirs(path, exist_ok=True)
 
@@ -54,7 +58,7 @@ def dbg_tosa_dump(tosa_graph, path):
         f.write(fb)
     assert os.path.exists(filepath_tosa_fb), "Failed to write TOSA flatbuffer"
 
-    filepath_desc_json = os.path.join(path, "desc.json")
+    filepath_desc_json = os.path.join(path, f"desc{suffix}.json")
     with open(filepath_desc_json, "w") as f:
         f.write(js)
     assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
@@ -65,7 +69,7 @@ def dbg_fail(node, tosa_graph, path):
     logger.warn("Internal error due to poorly handled node:")
     dbg_node(node)
     logger.warn(f"Debug output captured in '{path}'.")
-    raise RuntimeError("TOSA Internal Error on node, enable logging for further info")
+    raise RuntimeError("TOSA Internal Error on node, enable logging for further info.")
 
 
 # Helper function to match TOSA's broadcasting rank requirement
@@ -107,33 +111,16 @@ def transpose_helper(tosa_fb, input, new_order, out_dtype):
     return input_transposed
 
 
-def getNodeArgs(node):
+def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
 
 
-# Helper function to do broadcasting
-# Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_broadcasting
-def broadcast_shapes(shape1, shape2):
-    assert len(shape1) == len(shape2), "broadcast_shapes::shapes must have same ranks"
+def get_input_tensor(node: Node) -> TosaArg:
+    return TosaArg(node.args[0])
 
-    need_broadcasting = False
-    for val1, val2 in zip(shape1, shape2):
-        if val1 != val2:
-            need_broadcasting = True
-    if not need_broadcasting:
-        return shape1
 
-    broadcasted_shape = list(shape1)
-    shape2 = list(shape2)
-    for idx, _ in enumerate(broadcasted_shape):
-        if broadcasted_shape[idx] == 1:
-            broadcasted_shape[idx] = shape2[idx]
-        else:
-            assert not (
-                shape2[idx] != 1 and shape2[idx] != broadcasted_shape[idx]
-            ), "broadcast_shapes::broadcast shape mismatch"
-
-    return broadcasted_shape
+def get_output_node(node: Node) -> Node:
+    return list(node.users)[0]
 
 
 """ TOSA reshape returns a tensor with the same type/values as the input.
@@ -146,42 +133,23 @@ def build_reshape(tosa_fb, input_name, new_shape, output_name):
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
 
 
-def is_permute_node_before_addmm(node):
-    return (
-        node.target == exir_ops.edge.aten.permute_copy.default
-        and list(node.users)[0].target == exir_ops.edge.aten.addmm.default
-    )
-
-
-def is_bias_node_for_addmm(node):
+def is_bias_node_for_quantized_conv(node):
     consumer_node = list(node.users)[0]
-    # consumer node is addmm
-    is_rank2_linear_bias = (
-        consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
-    )
 
-    # rank>2 linear layers
-    # consumer_consumer node is view_copy
-    is_rank_greater_than_2_linear_bias = False
     if (
-        consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == exir_ops.edge.aten.view_copy.default
+        consumer_node.target == exir_ops.edge.aten.convolution.default
+        and consumer_node.args[2] == node
+        and consumer_node.meta["val"].dtype == torch.int8
     ):
-        consumer_consumer_node = list(consumer_node.users)[0]
-        is_rank_greater_than_2_linear_bias = (
-            list(consumer_consumer_node.users)[0].target == tosa_quant_utils.q_op
-        )
+        return True
 
-    return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias
+    return False
 
 
 def is_consumer_node_depthwise_conv2d(node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
-        inputs = []
-        for arg in consumer_node.args:
-            inputs.append(TosaArg(arg))
+        inputs = getNodeArgs(consumer_node)
         group = inputs[-1]
         in_channels = inputs[0].shape[1]
         out_channels = inputs[1].shape[0]
@@ -189,3 +157,105 @@ def is_consumer_node_depthwise_conv2d(node):
             return True
 
     return False
+
+
+def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
+    """Returns two input nodes to 'node' in order. If 'node' only has one input,
+    it is returned twice.
+
+    Fails if there are no input nodes.
+    Fails if there are >2 input nodes and 'check' is True,
+    """
+
+    num_inputs = len(node.all_input_nodes)
+    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
+
+    input1 = node.all_input_nodes[0]
+    if num_inputs == 1:
+        input2 = node.all_input_nodes[0]
+    else:
+        input2 = node.all_input_nodes[1]
+    if check:
+        assert (
+            num_inputs <= 2
+        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
+
+    return input1, input2
+
+
+def tosa_shape(shape, dim_order):
+    return tuple([shape[dim] for dim in dim_order])
+
+
+def expand_dims(
+    tosa_graph: ts.TosaSerializer,
+    input_node: TosaArg,
+    dtype: int,
+    dim: int,
+) -> Any:
+    """Inserts TOSA operators into the tosa_graph, that perform the equivalent
+    of the expand_dims (a.k.a unsqueeze) operation. A new axis is created at the
+    dim location.
+
+    Args:
+        tosa_graph (ts.TosaSerializer): The TOSA graph to manipulate.
+        input_node (TosaArg): The parent node of the expand dim operations.
+        dtype (ts.DType): The data type expand dims operations.
+        dim (int): The dimension to expand.
+
+    Returns:
+        Any: The output tensor of the inserted operation in the TOSA graph.
+    """
+    new_shape = list(input_node.shape)
+    new_shape.insert(dim, 1)
+
+    intermediate = tosa_graph.addIntermediate(new_shape, dtype)
+
+    build_reshape(tosa_graph, input_node.name, new_shape, intermediate.name)
+
+    return intermediate
+
+
+def get_resize_parameters(
+    input_size: torch.Tensor,
+    output_size: torch.Tensor,
+    resize_mode: int,
+    align_corners: bool,
+):
+    """Get the tosa.resize parameters based on the input and output size.
+
+    Args:
+        input_size (torch.Tensor): Size of the input
+        output_size (torch.Tensor): Size of the output
+        resize_mode (tosa.ResizeMode): The TOSA resize mode
+        align_corners (bool): Align the corners pixels of the input and output
+
+    Returns:
+        scale_n (torch.Tensor), scale_d (torch.Tensor),
+        offset (torch.Tensor), border (torch.Tensor)
+    """
+    assert torch.all(input_size > 0)
+    assert torch.all(output_size > 0)
+
+    scale_n = torch.tensor(
+        [
+            so - 1 if align_corners and si > 1 and so > 1 else so
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+    scale_d = torch.tensor(
+        [
+            si - 1 if align_corners and si > 1 and so > 1 else si
+            for si, so in zip(input_size, output_size)
+        ]
+    )
+
+    gcd = torch.gcd(scale_n, scale_d)
+    scale_n = scale_n // gcd
+    scale_d = scale_d // gcd
+
+    # No half-pixel centre support in PyTorch, no offset needed
+    offset = torch.zeros_like(input_size)
+    border = scale_d * (output_size - 1) - scale_n * (input_size - 1) + offset
+
+    return scale_n, scale_d, offset, border

@@ -83,6 +83,20 @@ class LinearModule(torch.nn.Module):
         return self.linear(x)
 
 
+class LinearSoftmaxModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.linear = torch.nn.Linear(12, 10)
+        self.softmax = torch.nn.Softmax(1)
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.softmax(x)
+
+        return x
+
+
 class ConvFCSoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -184,3 +198,25 @@ class ReLUModule(torch.nn.Module):
 
     def forward(self, x):
         return self.relu(x)
+
+
+class Conv2dReLUModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(4, 64, 2, bias=False)
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.relu(x)
+
+
+class Conv2dPermuteModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(4, 64, 2, bias=False)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.permute(x, [0, 2, 1])

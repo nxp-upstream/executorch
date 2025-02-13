@@ -53,7 +53,7 @@ size_t map_expand_to_repeats(
 } // namespace
 
 Tensor& expand_copy_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     const Tensor& self,
     ArrayRef<int64_t> expand_sizes,
     bool implicit,
@@ -83,6 +83,10 @@ Tensor& expand_copy_out(
       resize_tensor(out, {output_sizes, output_rank}) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
 
   // Holds the result of expand_sizes converted to repeat sizes
   int64_t repeats[kTensorDimensionLimit];

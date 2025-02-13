@@ -16,6 +16,7 @@ import executorch.exir as exir
 # Import passes
 import executorch.exir.memory_planning  # noqa
 import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -33,14 +34,18 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
-from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+from executorch.exir.passes.debug_handle_generator_pass import (
+    DebugHandleGeneratorPass,
+    generate_missing_debug_handles,
+)
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -61,10 +66,12 @@ from functorch.experimental import control_flow
 from torch import nn
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -712,7 +719,7 @@ class TestPasses(unittest.TestCase):
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
-        new_gm_res = MemoryPlanningPass("greedy")(new_gm)
+        new_gm_res = MemoryPlanningPass()(new_gm)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
@@ -948,12 +955,27 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
-        DebugHandleGeneratorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
+
+    def test_generate_missing_debug_handles(self) -> None:
+        eager_model = MLP(2, output_size=4)
+        inputs = eager_model.get_random_inputs()
+
+        ep = to_edge(
+            export(
+                eager_model,
+                inputs,
+            )
+        ).exported_program()
+
+        list(ep.graph.nodes)[0].meta.pop("debug_handle")
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        generate_missing_debug_handles(ep)
+        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -999,16 +1021,13 @@ class TestPasses(unittest.TestCase):
             torch.ones(2, 2),
         )
 
-        graph_module = (
-            to_edge(
-                export(
-                    f,
-                    inputs,
-                )
+        ep = to_edge(
+            export(
+                f,
+                inputs,
             )
-            .exported_program()
-            .graph_module
-        )
+        ).exported_program()
+        graph_module = ep.graph_module
 
         def check_debug_handle_metadata(graph_module: torch.fx.GraphModule) -> None:
             queue = [graph_module]
@@ -1026,6 +1045,7 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
+        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)
@@ -1221,6 +1241,80 @@ class TestPasses(unittest.TestCase):
             ],
         )
 
+    def test_constant_prop_pass_after_delegation(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self, dim=32):
+                super().__init__()
+                self.linear = torch.nn.Linear(dim, dim)
+
+            def forward(self, query, key, value):
+                query = self.linear(query)
+                key = self.linear(key)
+                value = self.linear(value)
+                return torch.nn.functional.scaled_dot_product_attention(
+                    query, key, value, attn_mask=None, dropout_p=0.0, is_causal=True
+                )
+
+        query = torch.randn(32, 32, 32, 32)
+        key = torch.randn(32, 32, 32, 32)
+        value = torch.randn(32, 32, 32, 32)
+
+        # Capture the model
+        m = torch.export.export_for_training(M(32), (query, key, value)).module()
+
+        # 8w16a quantization
+        from torch.ao.quantization.observer import (
+            MinMaxObserver,
+            PerChannelMinMaxObserver,
+        )
+
+        activation_qspec = QuantizationSpec(
+            dtype=torch.int16,
+            quant_min=-32768,
+            quant_max=32767,
+            qscheme=torch.per_tensor_affine,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=MinMaxObserver,
+        )
+        weight_qspec = QuantizationSpec(
+            dtype=torch.int8,
+            quant_min=-128,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+            is_dynamic=False,
+            observer_or_fake_quant_ctr=PerChannelMinMaxObserver,
+        )
+        custom_qconfig = QuantizationConfig(
+            input_activation=activation_qspec,
+            output_activation=activation_qspec,
+            weight=weight_qspec,
+            bias=None,
+            is_qat=False,
+        )
+        quantizer = XNNPACKQuantizer()
+        quantizer.set_global(custom_qconfig)
+        m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
+        m = convert_pt2e(m)
+
+        # export, perform constant propagation to make weights const
+        aten_prog = export(m, (query, key, value))
+        aten_prog = constant_prop_pass(aten_prog)
+
+        # lower to edge dialect
+        edge_prog = to_edge(
+            aten_prog,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
+        edge_prog = edge_prog.to_backend(XnnpackPartitioner())
+
+        # Perform constant propagation on the decomposed ops from sdpa
+        aten_prog = constant_prop_pass(edge_prog.exported_program())
+        # There should be at least one const due to spda op
+        self.assertGreaterEqual(len(aten_prog.constants), 1)
+
     def test_constant_prop_pass_for_parameter_slice(self) -> None:
         def count_slice(gm: torch.fx.GraphModule) -> int:
             return sum(
@@ -1412,15 +1506,15 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch._export.capture_pre_autograd_graph(
+            m = torch.export.export_for_training(
                 m_eager,
                 example_inputs,
-            )
+            ).module()
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
             quantizer.set_global(quantization_config)
-            m = prepare_pt2e(m, quantizer)
+            m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
             m = convert_pt2e(m, fold_quantize=True)
             ep = torch.export.export(m, example_inputs)
             dq_nodes_pre = count_dq_nodes(ep.graph_module)
@@ -1676,3 +1770,100 @@ class TestPasses(unittest.TestCase):
         )
         new_ep = constant_prop_pass(edge_manager._edge_programs["forward"])
         _ = copy.deepcopy(new_ep.module_call_graph)
+
+    def test_dim_order_revert_pass(self) -> None:
+        aten_op_str = "torch.ops.aten._to_copy.default"
+        edge_aten_op_str = "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+        edge_dim_order_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+
+        class Module(torch.nn.Module):
+            """
+            A simple module that has a single to op that converts to channels last and then back to contiguous.
+            Assuming contiguous input.
+            """
+
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(memory_format=torch.channels_last).to(
+                    memory_format=torch.contiguous_format
+                ) + x.to(memory_format=torch.channels_last).to(
+                    memory_format=torch.contiguous_format
+                )
+
+            @staticmethod
+            def to_copy_count():
+                return 4
+
+        def _do_checks(
+            test_str: str, allowed: str, allowed_count: int, not_allowed_list: List[str]
+        ) -> None:
+            for not_allowed in not_allowed_list:
+                FileCheck().check_count(allowed, allowed_count, exactly=True).check_not(
+                    not_allowed
+                ).run(test_str)
+
+        m = Module()
+        n = m.to_copy_count()
+        input = torch.randn([2, 3, 4, 5]).to(memory_format=torch.contiguous_format)
+
+        # 1. vanilla export, no edge ops
+        ep = export(
+            m,
+            (input,),
+        ).run_decompositions({})
+        _do_checks(
+            ep.graph_module.code,
+            aten_op_str,
+            n,
+            [edge_aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 2a. to edge without dim orders, we should see edge aten ops but not dim order ops
+        edge_prog = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_skip_dim_order=True)
+        )._edge_programs["forward"]
+        _do_checks(
+            edge_prog.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 3a. expect no change after the pass, we should see edge aten ops but not dim order ops
+        new_res = DimOrderOpsRevertPass()(edge_prog.graph_module)
+        self.assertIsNotNone(new_res)
+        _do_checks(
+            new_res.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 2b. let's try with dim order enabled, we should see edge dim order ops but not edge aten ops
+        edge_prog_dim_order = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_skip_dim_order=False)
+        )._edge_programs["forward"]
+        _do_checks(
+            edge_prog_dim_order.graph_module.code,
+            edge_dim_order_op_str,
+            n,
+            [aten_op_str, edge_aten_op_str],
+        )
+
+        # 3b. expect edge aten ops after the pass, we should see not see the edge dim order ops
+        new_res_dim_order = DimOrderOpsRevertPass()(edge_prog_dim_order.graph_module)
+        self.assertIsNotNone(new_res_dim_order)
+        _do_checks(
+            new_res_dim_order.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        output_no_dim_order = new_res.graph_module(input)
+        output_no_dim_order_revert = new_res_dim_order.graph_module(input)
+        self.assertTrue(
+            torch.allclose(output_no_dim_order[0], output_no_dim_order_revert[0])
+        )

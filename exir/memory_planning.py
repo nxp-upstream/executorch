@@ -18,12 +18,7 @@ import torch
 from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
 from executorch.exir.delegate import executorch_call_delegate
-from executorch.exir.error import (
-    ExportError,
-    ExportErrorType,
-    internal_assert,
-    InternalError,
-)
+from executorch.exir.error import internal_assert, InternalError
 from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
@@ -219,6 +214,9 @@ class Verifier:
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
                 assert len(specs) > 0, "Expect tensor specs"
+                specs = list(filter(lambda spec: not spec.const, specs))
+                if len(specs) == 0:
+                    continue
                 allocated = any(
                     spec is None or spec.mem_offset is not None for spec in specs
                 )
@@ -252,17 +250,6 @@ class Verifier:
             ), f"Misallocate graph output {graph_output_allocated} v.s. {self.alloc_graph_output}"
 
 
-def register_algo(fn: Callable[..., List[int]]) -> Callable[..., List[int]]:
-    algo_name = fn.__name__
-    if algo_name in REGISTERED_ALGOS:
-        raise ExportError(
-            ExportErrorType.VIOLATION_OF_SPEC,
-            f"Re-registering memory planning algorithm {algo_name}",
-        )
-    REGISTERED_ALGOS[algo_name] = fn
-    return fn
-
-
 def _is_out_var_node(node: torch.fx.Node) -> bool:
     return (
         node.op == "call_function"
@@ -281,7 +268,9 @@ def _is_inplace_node(node: torch.fx.Node) -> bool:
     )
 
 
-def update_tensor_lifetime(spec: TensorSpec, node_idx: int) -> None:
+def update_tensor_lifetime(
+    node: torch.fx.Node, spec: TensorSpec, node_idx: int
+) -> None:
     r"""
     Update the lifetime of the tensor to cover node_idx. A tensor's lifetime
     are represented by the index of the first and last node referring
@@ -292,7 +281,10 @@ def update_tensor_lifetime(spec: TensorSpec, node_idx: int) -> None:
         node_idx: extend the tensor's lifetime to cover node_idx
     """
     start, end = spec.lifetime
-    start = node_idx if start is None or start > node_idx else start
+    if node.op == "placeholder":
+        start = 0
+    else:
+        start = node_idx if start is None or start > node_idx else start
     end = node_idx if end is None or end < node_idx else end
     spec.lifetime = [start, end]
 
@@ -424,7 +416,11 @@ def collect_specs_from_nodes(  # noqa: C901
                 continue
             if ignore_graph_output and spec in graph_output_tensors:
                 continue
-            if ignore_const and spec.const:
+            if (
+                ignore_const
+                and spec.const
+                and not node.meta.get("weight_has_gradient", False)
+            ):
                 continue
             if dedup:
                 if spec in unique_spec:
@@ -453,7 +449,7 @@ def update_all_tensors_lifetime(
             do_assertion=False,
             ignore_dynamic_unbound_tensor=False,
         ):
-            update_tensor_lifetime(spec, node_idx)
+            update_tensor_lifetime(node, spec, node_idx)
             specs.add(spec)
     return specs
 
@@ -554,7 +550,6 @@ def get_node_tensor_specs(
         ]
 
 
-@register_algo
 def greedy(
     graph_module: torch.fx.GraphModule,
     alignment: int,
@@ -591,7 +586,10 @@ def greedy(
         for mem_id in shared_objects:
             input_total_size = 0
             if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+                # pyre-fixme[6]: For 1st argument expected
+                #  `pyre_extensions.ReadOnly[Sized]` but got `Union[Tensor, Module]`.
                 if len(bufsizes) > mem_id:
+                    # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.Ten...
                     input_total_size = bufsizes[mem_id]
             total_sizes[mem_id] = materialize_buffer(
                 shared_objects[mem_id], input_total_size
@@ -608,7 +606,6 @@ def greedy(
     return total_sizes
 
 
-@register_algo
 def naive(
     graph_module: torch.fx.GraphModule,
     alignment: int,
@@ -647,15 +644,6 @@ def naive(
 
     logging.debug(f"naive algorithm returns bufsizes: {bufsizes}")
     return bufsizes
-
-
-def get_algo(algo_name: str) -> Callable[..., List[int]]:
-    if algo_name not in REGISTERED_ALGOS:
-        raise ExportError(
-            ExportErrorType.NOT_SUPPORTED,
-            f"Memory planning algorithm '{algo_name}' not found",
-        )
-    return REGISTERED_ALGOS[algo_name]
 
 
 def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
@@ -765,7 +753,9 @@ def apply_algo(
     )
     insert_calls_to_free(graph_module, specs)
 
-    def handle_submodule(submodule_nd: torch.fx.Node) -> None:
+    def handle_submodule(
+        submodule_nd: torch.fx.Node, alloc_graph_input: bool = False
+    ) -> None:
         nonlocal bufsizes
         assert submodule_nd.op == "get_attr"
         submodule = getattr(graph_module, submodule_nd.target)
@@ -777,7 +767,7 @@ def apply_algo(
             submodule,
             alignment,
             graph_signature,
-            alloc_graph_input=False,
+            alloc_graph_input=alloc_graph_input,
             alloc_graph_output=True,
         )
         submodule.meta.update({"non_const_buffer_sizes": bufsizes})
@@ -792,7 +782,9 @@ def apply_algo(
     # TODO: Add test coverage for map operator once dynamo tracing is
     # fully supported for this. T142287208
     for map_node in get_map_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, map_node.args[0]))
+        handle_submodule(
+            typing.cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True
+        )
 
     graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
 

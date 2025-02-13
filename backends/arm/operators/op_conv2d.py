@@ -2,20 +2,23 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-unsafe
 from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    get_input_qparams,
+    get_output_qparams,
+)
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    build_rescale_conv_output,
-    get_quant_node_args,
-)
-from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs
+from executorch.backends.arm.tosa_quant_utils import build_rescale_conv_output
+from executorch.backends.arm.tosa_utils import build_reshape, tosa_shape
 
 from serializer.tosa_serializer import TosaOp
 
@@ -40,7 +43,7 @@ class Conv2dVisitor(NodeVisitor):
 
         if mod_remainder > pad:
             raise RuntimeError(
-                f"ignoring input element is not currently supported, got a large stride {stride}"
+                "This case should be handled by the SizeAdjustConv2d pass, is it enabled?"
             )
         return pad - mod_remainder
 
@@ -53,9 +56,6 @@ class Conv2dVisitor(NodeVisitor):
         is_quant_node: bool,
     ) -> None:
         input, weight, bias, stride, pad, dilation, _, _, group = inputs
-
-        # Currently only int8 is supported in quantized types.
-        actual_out_type = ts.DType.INT8 if is_quant_node else output.dtype
 
         # Get the attributes of convolution.
         attr = ts.TosaSerializerAttribute()
@@ -79,9 +79,11 @@ class Conv2dVisitor(NodeVisitor):
             dilation_attr[1],
         )
 
-        input_zp = (
-            get_quant_node_args(node.all_input_nodes[0]).zp if is_quant_node else 0
-        )
+        input_zp = 0
+        if inputs[0].dtype == ts.DType.INT8:
+            # int8 input requires quantization information
+            input_qparams = get_input_qparams(node)
+            input_zp = input_qparams[0].zp
 
         attr.ConvAttribute(
             pad=pad_attr,
@@ -97,17 +99,25 @@ class Conv2dVisitor(NodeVisitor):
             # Create a zero bias tensor if not presented
             out_channels = weight.shape[0]
             bias_name = "bias" + node.name.split("default", 1)[1]
+            bias_type = output.dtype
+            if output.dtype == ts.DType.INT8:
+                # Conv is quantized to int8, but the TOSA operator has
+                # output type int32, and the bias must be the same type
+                # as the TOSA output type
+                bias_type = ts.DType.INT32
             bias = tosa_graph.addConst(
                 [out_channels],
-                ts.DType.INT32 if is_quant_node else output.dtype,
+                bias_type,
                 [0] * out_channels,
                 name=bias_name,
             )
 
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
-        if is_quant_node:
-            conv2d_res = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
+        if output.dtype == ts.DType.INT8:
+            conv2d_res = tosa_graph.addIntermediate(
+                tosa_shape(output.shape, output.dim_order), ts.DType.INT32
+            )
             conv2d_output_name = conv2d_res.name
 
         # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
@@ -127,7 +137,7 @@ class Conv2dVisitor(NodeVisitor):
 
             weight_reshaped = tosa_graph.addIntermediate(
                 weight_post_shape,
-                ts.DType.INT8 if is_quant_node else weight.dtype,
+                weight.dtype,
             )
             build_reshape(
                 tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
@@ -152,18 +162,19 @@ class Conv2dVisitor(NodeVisitor):
 
         # For quantized convolution, rescale the output value back to the same
         # integer value domain of the next op. Otherwise return float32 output.
-        if is_quant_node:
+        if inputs[0].dtype == ts.DType.INT8:
             # Get scale_factor from input, weight, and output.
-            _, input_scale, _, _, _, _ = getNodeArgs(node.args[0])
-            _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
-            _, output_scale, output_zp, _, _, _ = getNodeArgs(list(node.users)[0])
+            input_scale = input_qparams[0].scale
+            weight_scale = input_qparams[1].scale
+            output_qargs = get_output_qparams(node)
             build_rescale_conv_output(
                 tosa_graph,
+                # pyre-fixme[61]: Uninitialized local [61]: Local variable `conv2d_res` is undefined, or not always defined.
                 conv2d_res,
                 output.name,
-                actual_out_type,
+                output.dtype,
                 input_scale,
                 weight_scale,
-                output_scale,
-                output_zp,
+                output_qargs[0].scale,
+                output_qargs[0].zp,
             )

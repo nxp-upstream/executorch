@@ -49,6 +49,9 @@ install_buck() {
 
   rm "${BUCK2}"
   popd
+
+  # Kill all running buck2 daemon for a fresh start
+  buck2 killall || true
 }
 
 function write_sccache_stub() {
@@ -128,7 +131,5 @@ if [[ -z "${GITHUB_RUNNER:-}" ]]; then
 fi
 
 print_cmake_info
-install_pytorch_and_domains
-install_flatc_from_source
 install_executorch
 build_executorch_runner "${BUILD_TOOL}"

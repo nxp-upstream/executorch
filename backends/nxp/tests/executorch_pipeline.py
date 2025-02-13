@@ -1,3 +1,8 @@
+# Copyright 2024-2025 NXP
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import torch
 from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
@@ -5,8 +10,9 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 from executorch import exir
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.examples.portable import export_to_edge
+from executorch.extension.export_util.utils import export_to_edge
 from executorch.exir import EdgeProgramManager, ExecutorchBackendConfig, ExecutorchProgramManager
 
 
@@ -21,15 +27,21 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
     return m
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, target="rt700") -> EdgeProgramManager:
+def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operators_not_to_delegate: list[str] = None, target="rt700") -> EdgeProgramManager:
     calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
     example_input = (torch.ones(*input_shape),)
 
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_input)
+
+    # Run pre-processing passes of the float32 aten dialect program.
+    pass_manager = NXPPyTorchPassManager(exir_program_aten)
+    pass_manager.run()  # All passes by default.
+
     exir_program_aten_quant = _quantize_model(exir_program_aten, calibration_inputs)
     edge_program_manager = export_to_edge(exir_program_aten_quant, example_input)
 
-    partitioner = NeutronPartitioner(generate_neutron_compile_spec(target))
+    compile_spec = generate_neutron_compile_spec(target, operators_not_to_delegate=operators_not_to_delegate) if operators_not_to_delegate else generate_neutron_compile_spec(target)
+    partitioner = NeutronPartitioner(compile_spec)
 
     edge_program_manager = edge_program_manager.to_backend(partitioner)
     return edge_program_manager
@@ -39,9 +51,7 @@ def to_quantized_executorch_program(model: torch.nn.Module, input_shape: tuple) 
     edge_program_manager = to_quantized_edge_program(model, input_shape)
 
     return edge_program_manager.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
 

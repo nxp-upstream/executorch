@@ -8,12 +8,27 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Collection
 
+import torch
 from torch.fx import Node
 
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
+from executorch.exir.dialects._ops import ops as exir_ops
 
+def _is_quant_node(node: torch.fx.Node) -> bool:
+    return node.target in [
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    ]
+
+def _is_dequant_node(node: torch.fx.Node) -> bool:
+    return node.target in [
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    ]
 
 class Target(Enum):
     IGNORE = 'ignore'  # No target platform. Any target specific restrictions will be ignored.
@@ -80,6 +95,35 @@ class NodeConverter(ABC):
         :param target: Value of the `Target` enum representing the target platform to check for.
         """
         return cls._is_supported_in_IR(node) and cls._is_supported_on_target(target)
+
+    @staticmethod
+    def _has_shared_q_params_if_quantized(node: Node) -> bool:
+        """Check if node has shared quantization parameters if it's quantized."""
+        if len(node.users) < 1 or len(node.all_input_nodes) < 1:
+            # Some exotic operator (only consumer or only produces)
+            return True
+
+        pre_node = node.prev
+        post_node = node.next
+
+        if pre_node.name == node.all_input_nodes[0] and post_node.name == node.users[0]:
+            raise RuntimeError("Prev & next nodes are not the same as inputs and outputs.")
+
+        if _is_dequant_node(pre_node) and _is_quant_node(post_node):
+            # Node is quantized
+            pre_zp = pre_node.args[1]
+            pre_scale = pre_node.args[2]
+            pre_type = pre_node.args[5]
+
+            post_zp = post_node.args[1]
+            post_scale = post_node.args[2]
+            post_type = pre_node.args[5]
+
+            # Q-params match?
+            return pre_zp == post_zp and pre_scale == post_scale and pre_type == post_type
+
+        # Node not quantized
+        return True
 
     def assert_convertible(self, node):
         """ Assert that the call `_is_supported_in_IR()` returns `True`. Otherwise, raise an exception and print an

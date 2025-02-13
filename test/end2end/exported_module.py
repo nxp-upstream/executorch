@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 """Test helper for exporting an nn.Module to an ExecuTorch program."""
 
 import functools
@@ -22,6 +24,8 @@ from executorch.exir.passes import (
 )
 from torch import nn
 from torch.export import export
+from torch.export._trace import _export
+from torch.export.experimental import _export_forward_backward
 
 
 class ExportedModule:
@@ -63,8 +67,8 @@ class ExportedModule:
         ignore_to_out_var_failure: bool = False,
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
-        extract_constant_segment: bool = True,
         skip_type_promotion: bool = False,
+        export_joint_graph: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -122,6 +126,8 @@ class ExportedModule:
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
             (
+                # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
+                #  `Union[Module, Tensor]`.
                 getattr(eager_module, trace_inputs_method)
                 if hasattr(eager_module, trace_inputs_method)
                 else eager_module.get_random_inputs
@@ -138,13 +144,17 @@ class ExportedModule:
         if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             trace_dynamic_shapes = eager_module.get_dynamic_shapes()
             method_name_to_dynamic_shapes = {}
             for method in methods:
                 method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
-        memory_planning_pass = MemoryPlanningPass("greedy")
+        memory_planning_pass = MemoryPlanningPass()
         if hasattr(eager_module, "get_memory_planning_pass"):
+            # pyre-fixme[29]: `Union[nn.modules.module.Module,
+            #  torch._tensor.Tensor]` is not a function.
             memory_planning_pass = eager_module.get_memory_planning_pass()
 
         class WrapperModule(nn.Module):
@@ -157,15 +167,30 @@ class ExportedModule:
         # variant, along with some other transformations.
         for method_name, method_input in method_name_to_args.items():
             # if not isinstance(eager_module, torch.nn.Module):
-            exported_methods[method_name] = export(
-                eager_module,
-                method_input,
-                dynamic_shapes=(
-                    method_name_to_dynamic_shapes[method_name]
-                    if method_name_to_dynamic_shapes
-                    else None
-                ),
-            )
+            if export_joint_graph:
+                # _export was having issues with WrapperModule.
+                assert method_name == "forward"
+                ep = _export(
+                    eager_module,
+                    method_input,
+                    dynamic_shapes=(
+                        method_name_to_dynamic_shapes[method_name]
+                        if method_name_to_dynamic_shapes
+                        else None
+                    ),
+                    pre_dispatch=True,
+                )
+                exported_methods[method_name] = _export_forward_backward(ep)
+            else:
+                exported_methods[method_name] = export(
+                    eager_module,
+                    method_input,
+                    dynamic_shapes=(
+                        method_name_to_dynamic_shapes[method_name]
+                        if method_name_to_dynamic_shapes
+                        else None
+                    ),
+                )
 
         exec_prog = to_edge(
             exported_methods,
@@ -186,7 +211,6 @@ class ExportedModule:
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
-                extract_constant_segment=extract_constant_segment,
             )
         )
 
@@ -195,6 +219,8 @@ class ExportedModule:
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
+            # pyre-fixme[6]: For 1st argument expected `(...) -> Any` but got
+            #  `Union[Module, Tensor]`.
             eager_module.get_random_inputs,
             # all exported methods must have the same signature so just pick the first one.
             methods[0],

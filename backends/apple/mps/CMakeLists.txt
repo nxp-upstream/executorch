@@ -69,17 +69,17 @@ add_library(mpsdelegate ${_mps_backend__srcs})
 find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(METAL_FRAMEWORK Metal)
 find_library(MPS_FRAMEWORK MetalPerformanceShaders)
-find_library(MPS_GRAPG_FRAMEWORK MetalPerformanceShadersGraph)
+find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
 target_link_libraries(
   mpsdelegate
   PRIVATE bundled_program
           mps_schema
-          executorch_no_prim_ops
+          executorch_core
           ${FOUNDATION_FRAMEWORK}
           ${METAL_FRAMEWORK}
           ${MPS_FRAMEWORK}
-          ${MPS_GRAPG_FRAMEWORK}
+          ${MPS_GRAPH_FRAMEWORK}
 )
 
 target_link_options_shared_lib(mpsdelegate)

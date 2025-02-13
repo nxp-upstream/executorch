@@ -15,8 +15,8 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-from executorch.backends.nxp.backend.edge_program_converter import functions_converters
 from executorch.backends.nxp.backend.ir.converter.node_converter import Target
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -176,28 +176,26 @@ class QDQClusterRecognizer:
                     self.cluster_map[cluster_name] = self.QDQCluster(node, cluster)
 
 
-# Operators supported on Neutron.
-# Note: This configuration assign the whole cifar10 model on the neutron. If you need a specific case for testing or
-# evaluation, comment out particular operator.
-NeutronSupportedOperatorsList = [
-    exir_ops.edge.aten._softmax.default,
-    exir_ops.edge.aten.avg_pool2d.default,
-    exir_ops.edge.aten.constant_pad_nd.default,
-    exir_ops.edge.aten.convolution.default,
-    exir_ops.edge.aten.max_pool2d_with_indices.default,
-    exir_ops.edge.aten.mm.default,
-    exir_ops.edge.aten.addmm.default,
-    exir_ops.edge.aten.relu.default,
-    exir_ops.edge.aten.view_copy.default, # TODO: The view copy, is used as reshape. This shall be delegated only if the
-                                          # the reshape is not the only operator in the cluster.
-]
+supported_ops = {
+    exir_ops.edge.aten.addmm.default: AddMMConverter,
+    exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
+    exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
+    exir_ops.edge.aten.convolution.default: ConvolutionConverter,
+    exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,
+    exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,
+    exir_ops.edge.aten.mm.default: MMConverter,
+    exir_ops.edge.aten.relu.default: ReLUConverter,
+    exir_ops.edge.aten._softmax.default: SoftmaxConverter,
+    exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
+}
 
 
 class NeutronSupportedOperators(OperatorSupportBase):
 
-    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster], target: Target):
+    def __init__(self, qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster], target: Target, operators_not_to_delegate: List[str]):
         self.qdq_clusters = qdq_clusters
         self.target = target
+        self.operators_not_to_delegate = operators_not_to_delegate
 
     def _is_node_quantized(self, node: torch.fx.node.Node):
         return "cluster" in node.meta
@@ -205,11 +203,20 @@ class NeutronSupportedOperators(OperatorSupportBase):
     def _is_node_call_function(self, node: torch.fx.node.Node):
         return node.op == "call_function"
 
+    def is_node_delegatable(self, node: torch.fx.node.Node):
+        if self.operators_not_to_delegate != ['']:
+            any_non_delegatable = any(x in node.name for x in self.operators_not_to_delegate)
+            return not any_non_delegatable
+        return True
+
     def _is_node_supported_compute(self, node: torch.fx.node.Node) -> bool:
         """
         Operator checking function for compute nodes.
         """
-        if (node_converter := functions_converters.get(node.target, None)) is None:
+        if not self.is_node_delegatable(node):
+            return False
+
+        if (node_converter := supported_ops.get(node.target, None)) is None:
             # There is no `NodeConverter` for this `node`.
             return False
 
@@ -264,9 +271,12 @@ class NeutronPartitioner(Partitioner):
         target = self.delegation_spec[1][2].value
         target = Target(target.decode())
 
+        operators_not_to_delegate = self.delegation_spec[1][3].value.decode().split(',')
+        logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
+
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeutronSupportedOperators(qdq_clusterer.cluster_map, target),
+            NeutronSupportedOperators(qdq_clusterer.cluster_map, target, operators_not_to_delegate),
             allows_single_node_partition=True,
         )
 

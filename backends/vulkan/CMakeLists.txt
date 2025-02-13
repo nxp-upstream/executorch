@@ -61,6 +61,8 @@ list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 # vulkan API files
 
 file(GLOB_RECURSE vulkan_api_cpp ${RUNTIME_PATH}/api/*)
+file(GLOB_RECURSE vulkan_vkapi_cpp ${RUNTIME_PATH}/vk_api/*)
+list(APPEND vulkan_api_cpp ${vulkan_vkapi_cpp})
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
 
 # vulkan ComputeGraph files
@@ -81,14 +83,14 @@ set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
 set(SCHEMA_INCLUDE_DIR ${CMAKE_BINARY_DIR}/schema/include)
 
 set(GENERATED_HEADER
-    ${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/schema_generated.h
+    ${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/schema_generated.h
 )
 
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
-    "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/" ${_vulkan_schema__srcs}
+    "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating vulkan_schema headers"
   VERBATIM

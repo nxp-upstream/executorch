@@ -21,7 +21,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import NeutronConverterManager
 from executorch.backends.nxp.neutron_node_extraction import extract_artifacts_from_neutron_node, NeutronNodeArtifacts
-from executorch.backends.xnnpack.passes import RemoveGetItemPass, XNNPACKPassManager
+from executorch.backends.xnnpack._passes import RemoveGetItemPass, XNNPACKPassManager
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
@@ -34,11 +34,19 @@ class NeutronCompileSpecBuilder:
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
         self.output_format = None
+        self.operators_not_to_delegate: List[str] = []
+
+    def _replace_colons(self, operator: str) -> str:
+        """
+        Replace '::' with '_'
+        """
+        return operator.replace('::', '_')
 
     def neutron_compile_spec(
         self,
         config: str,
         extra_flags: Optional[str] = None,
+        operators_not_to_delegate: Optional[List[str]] = None,
     ):
         """
         Generate compile spec for Neutron NPU
@@ -46,6 +54,7 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             extra_flags: Extra flags for the Neutron compiler
+            operators_not_to_delegate: List of operators that should not be delegated
         """
         try:
             self.config = Target(config)
@@ -61,6 +70,9 @@ class NeutronCompileSpecBuilder:
         ]
         if extra_flags is not None:
             self.compiler_flags.append(extra_flags)
+            
+        if operators_not_to_delegate is not None:
+            self.operators_not_to_delegate = [self._replace_colons(op) for op in operators_not_to_delegate]
 
         return self
 
@@ -72,7 +84,8 @@ class NeutronCompileSpecBuilder:
             self.compile_spec += [
                 CompileSpec("output_format", "tflite".encode()),
                 CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
-                CompileSpec("target", self.config.value.encode())
+                CompileSpec("target", self.config.value.encode()),
+                CompileSpec("operators_not_to_delegate", ",".join(self.operators_not_to_delegate).encode())
             ]
 
         return self.compile_spec
@@ -82,10 +95,12 @@ def generate_neutron_compile_spec(
     config: str,  # The target platform. For example "rt700".
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
-) -> list[CompileSpec]:
+    operators_not_to_delegate: Optional[List[str]] = None,
+) -> List[CompileSpec]:
     return NeutronCompileSpecBuilder().neutron_compile_spec(
         config,
         extra_flags=extra_flags,
+        operators_not_to_delegate=operators_not_to_delegate
     ).build()
 
 
@@ -115,6 +130,8 @@ class NeutronBackend(BackendDetails):
                 target = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
+            if spec.key == "operators_not_to_delegate":
+                operators_not_to_delegate = spec.value.decode().split(',')
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -128,10 +145,10 @@ class NeutronBackend(BackendDetails):
         if output_format == "tflite":
             # We need to create custom model verifier with max_pool2d added as exception.
             # Otherwise, we get violation that this op is not part of ATen Core ops.
-            edge_program._verifier = EXIREdgeDialectVerifier(
+            edge_program._verifiers = [EXIREdgeDialectVerifier(
                 class_only=True,
                 exception_list=[torch.ops.aten.max_pool2d.default]
-            )
+            )]
 
             # Remove MaxPool-related "getitem" nodes from graph
             edge_program = XNNPACKPassManager(edge_program, [RemoveGetItemPass]).transform()

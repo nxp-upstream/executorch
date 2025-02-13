@@ -4,133 +4,100 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
+from typing import Any, List, Optional, Type
+
 import torch
-from executorch.backends.cadence.aot.utils import get_edge_overload_packet
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, ProxyValue
-from torch._subclasses import FakeTensor
-from torch.utils._pytree import tree_map_only
+import torch.fx
+import torch.utils._pytree as pytree
+from executorch.backends.cadence.aot.fuse_ops import (
+    CadenceFuseOpsInGraph,
+    FuseFullThenReshapePass,
+    FuseTransposeOpPairsPass,
+)
+from executorch.backends.cadence.aot.pass_utils import (
+    CadencePassAttribute,
+    create_cadence_pass_filter,
+    register_cadence_pass,
+)
+
+from executorch.backends.cadence.aot.remove_ops import (
+    CadenceRemoveNops,
+    RemoveNopSliceOrViewOpPass,
+    RemoveRedundantOps,
+)
+from executorch.backends.cadence.aot.reorder_ops import CadenceReorderOpsInGraph
+from executorch.backends.cadence.aot.replace_ops import CadenceReplaceOpsInGraph
+from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
+from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_manager import PassManager, PassType
+from executorch.exir.passes import dead_code_elimination_pass
+from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
+from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
 
-class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class InitializePipeline(ExportPass):
     """
-    Replace the pt2 quantization ops with custom cadence quantization ops.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in {exir_ops.edge.quantized_decomposed.quantize_per_tensor.default}:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.cadence.quantize_per_tensor.default,
-            args,
-            kwargs,
-            meta,
-        )
-
-
-class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
-    """
-    Replace the pt2 dequantization ops with custom cadence dequantization ops.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in {exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default}:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.cadence.dequantize_per_tensor.default,
-            args,
-            kwargs,
-            meta,
-        )
-
-
-class ReplaceScalarTensorWithFullPass(ExportPass):
-    """
-    aten.scalar_tensor can be replaced by aten.full with a shape of [1].
+    Initialize the pass pipeline. This should invariably be the first pass to
+    run.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in {
-            exir_ops.edge.aten.scalar_tensor.default,
-            torch.ops.aten.scalar_tensor.default,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.aten.full.default,
-            (
-                [1],
-                args[0],
-            ),
-            {},
-            meta,
-        )
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        dead_code_elimination_pass(graph_module)
+        result = SpecPropPass()(graph_module)
+        assert result is not None
+        return result
 
 
-class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class FinalizePipeline(ExportPass):
     """
-    When the shape is static, replace squeeze_copy and unsqueeze_copy ops with
-    view_copy op
+    The final cleanup pass after running the pass pipeline.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
-        # Instead of testing EdgeOpOverload, test EdgeOpOverloadPacket,
-        # which allows us to cover all overloads.
-        if get_edge_overload_packet(op) not in {
-            exir_ops.edge.aten.squeeze_copy,
-            exir_ops.edge.aten.unsqueeze_copy,
-        }:
-            return super().call_operator(op, args, kwargs, meta)
-        # Get the output tensor shape
-        out_shape = meta["val"].shape
-
-        # Bail out if any dim is not an int (dynamic shape)
-        for dim in list(out_shape):
-            if not isinstance(dim, int):
-                return super().call_operator(op, args, kwargs, meta)
-
-        # Return a view op with the new shape
-        view_args = (args[0], list(out_shape))
-        return super().call_operator(
-            exir_ops.edge.aten.view_copy.default, view_args, kwargs, meta
-        )
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        finalize_passes: List[PassType] = [
+            ScalarToTensorPass(),
+            SpecPropPass(),
+        ]
+        result = PassManager(passes=finalize_passes)(graph_module)
+        dead_code_elimination_pass(result.graph_module)
+        return result
 
 
-class RemoveZeroSizedCatArgsPass(ExportPass):
-    def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.cat.default:
-            return super().call_operator(op, args, kwargs, meta)
+# Similar to what's done in executorch/exir/pass_base.py
+Argument = Any  # pyre-ignore
 
-        # Remove any zero-sized tensor arg to form a new args list.
-        new_args = []
-        for arg in args[0]:
-            arg_tensor = arg.to_tensor() if isinstance(arg, ProxyValue) else arg
-            if arg_tensor.numel() > 0:
-                new_args.append(arg)
 
-        # If all the tensors were empty, we just return an empty tensor with
-        # the right shape.
-        if not new_args:
-            args_data, kwargs_data = tree_map_only(
-                ProxyValue, lambda x: x.data, (args, kwargs)
-            )
-            result = op(*args_data, **kwargs_data)
-            # When tracing with PT2, the FakeTensor mode requires the constant
-            # argument to be set to itself.
-            # TODO(matthiascremon): confirm this is the best way to do this.
-            if isinstance(result, FakeTensor):
-                result.constant = result
-            return torch.empty_like(result)
+def get_passes_in_default_order() -> List[Type[PassType]]:
+    passes = [
+        InitializePipeline,
+        RemoveRedundantOps.passes,
+        CadenceReorderOpsInGraph.passes,
+        # Phase ordering: remove -> fusion -> replacement passes.
+        CadenceRemoveNops.passes,
+        CadenceFuseOpsInGraph.passes,
+        CadenceReplaceOpsInGraph.passes,
+        CadenceSimplifyOpsInGraph.passes,
+        FinalizePipeline,
+        FuseFullThenReshapePass,
+        FuseTransposeOpPairsPass,
+        RemoveNopSliceOrViewOpPass,
+    ]
+    return pytree.tree_flatten(passes)[0]
 
-        # If there was only one tensor in the new_args list,
-        # we can safely erase this cat op.
-        if len(new_args) == 1:
-            return new_args[0]
 
-        # Otherwise, we replace args[0] with new_args.
-        args = list(args)
-        args[0] = new_args
-        args = tuple(args)
-        return super().call_operator(op, args, kwargs, meta)
+def get_cadence_passes(
+    opt_level: int,
+) -> List[Optional[PassResult]]:
+    passes = get_passes_in_default_order()
+    pass_filter = create_cadence_pass_filter(opt_level)
+    filtered_passes = [
+        # pyre-fixme[20]: Call `torch.fx.passes.infra.pass_base.PassBase.__call__` expects argument `graph_module`.
+        filtered_pass()
+        # pyre-fixme[6]: In call `filter.__new__` ... got `List[Type[typing.Callable[[GraphModule], Optional[PassResult]]]]`.
+        for filtered_pass in list(filter(pass_filter, passes))
+    ]
+    return filtered_passes

@@ -44,9 +44,10 @@ from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
-from torch._decomp import core_aten_decompositions, get_decompositions
+from torch._decomp import get_decompositions
 from torch._dynamo.guards import Guard
 from torch._functorch.eager_transforms import _maybe_unwrap_functional_tensor
+from torch.export import default_decompositions
 from torch.func import functionalize
 from torch.fx.operator_schemas import normalize_function
 from torch.utils._pytree import TreeSpec
@@ -272,7 +273,7 @@ class PythonTensor(torch.Tensor):
             kwargs = {}
         if torch.is_inference_mode_enabled():
             if func is torch.nn.functional.layer_norm:
-                args, kwargs = normalize_function(func, args, kwargs)
+                args, kwargs = normalize_function(func, args, kwargs)  # pyre-fixme[23]
                 input, normalized_shape = args
                 normalized_shape = list(normalized_shape)
                 return cls.__torch_dispatch__(
@@ -470,13 +471,13 @@ class DispatchTracer(fx.Tracer):
                 self.submodules[a] = name_submodule
             return self.create_node("get_attr", self.submodules[a], (), {})
 
-        return super().create_arg(a)
+        return super().create_arg(a)  # pyre-fixme[7]
 
     @staticmethod
     def get() -> "DispatchTracer":
         return TRACER
 
-    def trace(
+    def trace(  # pyre-fixme[14,15]
         self,
         root: Callable[..., Value],
         concrete_args: Tuple[Value, ...] = (),
@@ -631,7 +632,7 @@ def _default_decomposition_table(
         # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
     # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
-    return core_aten_decompositions()
+    return default_decompositions()
 
 
 def dynamo_trace(
@@ -724,7 +725,9 @@ def dispatch_trace(
 
     _, out_spec = pytree.tree_flatten(tree_out)
 
+    # pyre-fixme[16]: `GraphModule` has no attribute `in_spec`.
     gm.in_spec = in_spec
+    # pyre-fixme[16]: `GraphModule` has no attribute `out_spec`.
     gm.out_spec = out_spec
 
     # TODO (tmanlaibaatar) This is bit clowny, but our

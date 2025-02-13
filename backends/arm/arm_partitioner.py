@@ -3,13 +3,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import logging
-import operator
 import os
-from typing import final, List
+from typing import Callable, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.arm.arm_backend import ArmBackend
+from executorch.backends.arm.arm_backend import ArmBackend  # usort: skip
+from executorch.backends.arm._passes.tag_io_quant_pass import TagIOQuantPass
+from executorch.backends.arm.operator_support.tosa_supported_operators import (
+    TOSASupportedOperators,
+)
+from executorch.backends.arm.tosa_specification import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -17,11 +23,9 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import PassManager
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-
-from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -29,92 +33,6 @@ TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
-
-
-class TOSASupportedOperators(OperatorSupportBase):
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.convolution.default,
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.avg_pool2d.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.aten.mean.dim,
-            operator.getitem,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        ]
-
-        supported &= self.is_node_supported_custom(node)
-
-        # Override partitioning based on pre partition passes
-        if supported and "arm_partition" in node.meta:
-            supported = supported & node.meta["arm_partition"]
-            node.meta.pop("arm_partition")
-
-        return supported
-
-    def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
-        if node.target == exir_ops.edge.aten.mean.dim:
-            dim = node.args[1]
-            keep_dim = node.args[2]
-            if dim != [-1, -2] or keep_dim is False:
-                return False
-        return True
-
-
-from executorch.exir.pass_base import ExportPass, PassResult
-from executorch.exir.passes import PassManager
-
-
-class TagIOQuant(ExportPass):
-    """
-    Pass run before partitioning to tag Q/DQ on any placeholder and output
-    to ensure we don't greedily partition them for device. Float conversion
-    has to happen outside a TOSA base inference profile.
-    """
-
-    def __init__(self, edge_program: torch.export.ExportedProgram):
-        super(TagIOQuant, self).__init__()
-        self.edge_program = edge_program
-
-    def is_quant_node(self, node: torch.fx.node.Node):
-        return node.target in {
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-        }
-
-    def is_dequant_node(self, node: torch.fx.node.Node):
-        return node.target in {
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        }
-
-    def call(self, graph_module: torch.fx.GraphModule):
-        for node in graph_module.graph.nodes:
-            # tag q of input
-            if node.op == "placeholder":
-                for user in node.users.keys():
-                    # if we have an input going into a quantize
-                    if self.is_quant_node(user):
-                        user.meta["arm_partition"] = False
-
-            # tag dq of outputs
-            if node.op == "output":
-                quant, *_ = node.args[0]
-                if self.is_dequant_node(quant):
-                    quant.meta["arm_partition"] = False
-
-        graph_module.recompile()
-        return PassResult(graph_module, True)
 
 
 @final
@@ -128,19 +46,25 @@ class ArmPartitioner(Partitioner):
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
 
+        tosa_spec = TosaSpecification.create_from_compilespecs(
+            self.delegation_spec.compile_specs
+        )
+
+        logger.info(f"Partitioning for {tosa_spec}")
+
         for spec in self.delegation_spec.compile_specs:
             if spec.key == "quantize_io" and spec.value.decode() == "True":
                 # Exclude IO quantization from the partition
                 passes = PassManager(
                     passes=[
-                        TagIOQuant(exported_program),
+                        TagIOQuantPass(),
                     ]
                 )
                 passes(exported_program.graph_module)
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            TOSASupportedOperators(),
+            TOSASupportedOperators(tosa_spec),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
@@ -155,3 +79,13 @@ class ArmPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
+
+    def ops_to_not_decompose(
+        self,
+        ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_to_not_decompose = [
+            torch.ops.aten.linear.default,
+            torch.ops.aten.upsample_nearest2d.vec,
+        ]
+        return (ops_to_not_decompose, None)

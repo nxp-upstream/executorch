@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,13 +16,16 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
-from executorch.examples.portable.utils import export_to_edge, save_pte_program
+from executorch.examples.nxp.models.mlperf_tiny import (AnomalyDetection, KeywordSpotting, ImageClassification,
+                                                        VisualWakeWords)
 from executorch.exir import ExecutorchBackendConfig
+from executorch.extension.export_util import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -82,6 +85,10 @@ def get_model_and_inputs_from_name(model_name: str):
 
 models = {
     "cifar10": CifarNet,
+    "visual_wake_words": VisualWakeWords,
+    "keyword_spotting": KeywordSpotting,
+    "image_classification": ImageClassification,
+    "anomaly_detection": AnomalyDetection,
 }
 
 
@@ -163,6 +170,14 @@ if __name__ == "__main__":
         default=False,
         help="Test the selected model and print the accuracy between 0 and 1.",
     )
+    parser.add_argument(
+        "--operators_not_to_delegate",
+        required=False,
+        default=[],
+        type=str,
+        nargs='*',
+        help="List of operators not to delegate. E.g., --operators_not_to_delegate aten::convolution aten::mm"
+    )
 
     args = parser.parse_args()
 
@@ -180,7 +195,11 @@ if __name__ == "__main__":
     # it yet.
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
-    # 3. Quantize if required
+    # 3. Run pre-processing passes of the float32 aten dialect program.
+    pass_manager = NXPPyTorchPassManager(exir_program_aten)
+    pass_manager.run()  # All passes by default.
+
+    # 4. Quantize if required
     if args.quantize:
         if args.quantize and not args.so_library:
             logging.warning(
@@ -213,31 +232,31 @@ if __name__ == "__main__":
         quantized_str = 'quantized ' if args.quantize else ''
         print(f'\n{cyan}Accuracy of the {quantized_str}`{args.model_name}`: {accuracy}{end_format}\n')
 
-    # 4. Export to edge program
+    # 5. Export to edge program
     # edge_program = exir.to_edge(exir_program_aten)
     edge_program = export_to_edge(exir_program_aten, example_inputs,
                                   verbose=args.debug)  # TODO for now reusing the default for edge_compile_config
     # (compared to Arm)
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
 
-    # 5. Delegate to Neutron
+    # 6. Delegate to Neutron
     if args.delegate is True:
         logging.info("Executing Neutron Partitioner and Delegate")
         edge_program = edge_program.to_backend(
             NeutronPartitioner(
                 generate_neutron_compile_spec(
-                    args.target
+                    args.target,
+                    operators_not_to_delegate=args.operators_not_to_delegate
+>>>>>>> 295ca4dfb28cf93049d03defcd2d84058772e3d4
                 )
             )
         )
         logging.debug(f"Lowered graph:\n{edge_program.exported_program().graph}")
 
-    # 6. Export to ExecuTorch program
+    # 7. Export to ExecuTorch program
     try:
         exec_prog = edge_program.to_executorch(
-            config=ExecutorchBackendConfig(
-                extract_delegate_segments=False, extract_constant_segment=False
-            )
+            config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
         if "Missing out variants" in str(e.args[0]):

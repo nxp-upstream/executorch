@@ -139,6 +139,16 @@ class ReluPattern(SharedSpecPattern):
         return [torch.ops.aten.relu.default]
 
 
+class ReluInPlacePattern(SharedSpecPattern):
+    """
+    Quantizer for Relu operator with param inplace=True. Shared quantization spec is selected, as ReLU usually
+    follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.relu_.default]
+
+
 class ReshapePattern(SharedSpecPattern):
     """
     Quantizer for Reshape operator.
@@ -220,6 +230,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(PermutePattern(), static_qconfig),
                 CadenceAtenQuantizer(PadPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
             ]
         )

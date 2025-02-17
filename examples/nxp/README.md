@@ -48,7 +48,7 @@ We support several example models. To run these examples, we will use `aot_neutr
 
     Run the script with following arguments: `--model_name` - specify model from a list of available models, `--so_library` 
     - specify path to `libquantized_ops_aot_lib.so` library from step 1. Quantization and delegation are controlled by
-    `--quantize` and `--quantize` flags, turned off by default.
+    `--quantize` and `--delegate` flags, turned off by default.
     
     Supported models:
     - cifar10

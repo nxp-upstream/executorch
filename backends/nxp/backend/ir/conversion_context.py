@@ -1,9 +1,8 @@
-#
 # Copyright 2024 NXP
 #
-# License: LA_OPT_NXP_Software_License
-# See the LICENSE_LA_OPT_NXP_Software_License for more details.
-#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from torch import Node
 from torch.nn import Parameter
 

@@ -7,6 +7,7 @@
 import numpy as np
 import torch
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import input_tensor, input_tensor_safe
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
@@ -22,7 +23,7 @@ class ConvolutionConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         is_transposed = node.args[6]
         output_padding = node.args[7]
         groups = node.args[8]

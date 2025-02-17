@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
@@ -16,9 +17,8 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 class AvgPool2dConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
-
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         n_args = len(node.args)
 
         padding = node.args[3] if n_args >= 4 else [0, 0]
@@ -28,8 +28,8 @@ class AvgPool2dConverter(NodeConverter):
         _, explicit_padding = aten_translator.convert_padding(padding)
 
         if (not count_include_pad and explicit_padding is not None) or \
-                divisor_override is not None or \
-                ceil_mode:
+            divisor_override is not None or \
+            ceil_mode:
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
@@ -52,7 +52,6 @@ class AvgPool2dConverter(NodeConverter):
             ops.add_pre(self.builder.create_pad_operator_before(t_op, 0, explicit_padding))
 
         return ops.flatten()
-
 
     # AvgPool2d Node format: (Tensor self, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False
     #                         bool count_include_pad=True, int? divisor_override=None)

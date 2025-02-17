@@ -10,11 +10,13 @@ from typing import Collection
 
 import torch
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.exir.dialects._ops import ops as exir_ops
+
 
 def _is_quant_node(node: torch.fx.Node) -> bool:
     return node.target in [
@@ -23,12 +25,14 @@ def _is_quant_node(node: torch.fx.Node) -> bool:
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     ]
 
+
 def _is_dequant_node(node: torch.fx.Node) -> bool:
     return node.target in [
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     ]
+
 
 class Target(Enum):
     IGNORE = 'ignore'  # No target platform. Any target specific restrictions will be ignored.
@@ -65,7 +69,7 @@ class NodeConverter(ABC):
     # noinspection PyPep8Naming
     @staticmethod
     @abstractmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         """ Check if the `node` can be converted to the intermediate representation.
             Classes which implement conversion for individual operators must overwrite this method.
 
@@ -88,13 +92,14 @@ class NodeConverter(ABC):
         return target == Target.IGNORE or target in cls.supported_targets
 
     @classmethod
-    def is_supported(cls, node: Node, target: Target) -> bool:
+    def is_supported(cls, node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
         """ Check if the given `node` is supported in the IR and on the given `target` platform.
 
         :param node: torch.Node to check.
         :param target: Value of the `Target` enum representing the target platform to check for.
+        :param parameters_mapping: Dict mapping tensor names to their data.
         """
-        return cls._is_supported_in_IR(node) and cls._is_supported_on_target(target)
+        return cls._is_supported_in_IR(node, parameters_mapping) and cls._is_supported_on_target(target)
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
@@ -129,8 +134,10 @@ class NodeConverter(ABC):
         """ Assert that the call `_is_supported_in_IR()` returns `True`. Otherwise, raise an exception and print an
              error message.
         """
-        assert self._is_supported_in_IR(node), (f'Node `{node}` is not convertible to the intermediate representation. '
-                                                'There is an error in the partitioner.')
+        assert self._is_supported_in_IR(node, self.context.parameters_mapping), (
+            f'Node `{node}` is not convertible to the intermediate representation. '
+            'There is an error in the partitioner.'
+        )
 
     @property
     def builder(self) -> AtenModelBuilderDirector:

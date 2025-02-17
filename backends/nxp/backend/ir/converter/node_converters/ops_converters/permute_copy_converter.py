@@ -5,6 +5,7 @@
 
 import numpy as np
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter import quantization_utils
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
@@ -16,7 +17,7 @@ class PermuteCopyConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         return True
 
     def convert(self, node: Node):

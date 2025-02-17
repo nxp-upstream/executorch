@@ -7,6 +7,7 @@
 import numpy as np
 import torch
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
@@ -16,7 +17,7 @@ class QDQQuantizeConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         if "cluster" not in node.meta or \
             node.args[5] != torch.int8:
             return False

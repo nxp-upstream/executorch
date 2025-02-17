@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
@@ -15,7 +16,7 @@ class AddMMConverter(NodeConverter):
     """ Convert the `aten.addmm` operator to TFLite `FullyConnected` with a bias input. """
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         if len(node.all_input_nodes) != 3:
             return False
 

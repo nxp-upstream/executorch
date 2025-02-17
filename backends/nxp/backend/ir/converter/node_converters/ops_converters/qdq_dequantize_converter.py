@@ -6,6 +6,7 @@
 
 import numpy as np
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import torch_type_to_numpy_type
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
@@ -16,7 +17,7 @@ class QDQDequantizeConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         zero_point_type = torch_type_to_numpy_type(node.args[5])
         if "cluster" not in node.meta or \
             zero_point_type not in [np.int8, np.int32]:

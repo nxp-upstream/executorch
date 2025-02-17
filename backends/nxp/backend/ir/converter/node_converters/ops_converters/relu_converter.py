@@ -5,8 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 from torch.fx import Node
+from torch.nn import Parameter
 
-from executorch.backends.nxp.backend.ir.converter.conversion import common, translator
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
 
@@ -14,9 +14,8 @@ from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import Builti
 class ReLUConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
-
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         return True
 
     def convert(self, node: Node):

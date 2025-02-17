@@ -5,11 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 import numpy as np
 from torch.fx import Node
+from torch.nn import Parameter
 
-from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import max_pool_2d_options
 
@@ -21,7 +22,7 @@ class MaxPool2dConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         n_args = len(node.args)
 
         dilation = node.args[4] if n_args >= 5 else [1, 1]

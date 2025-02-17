@@ -5,6 +5,7 @@
 
 import numpy as np
 from torch.fx import Node
+from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import input_tensor, output_tensor, tensor_rank
 from executorch.backends.nxp.backend.ir.converter import quantization_utils
@@ -19,7 +20,7 @@ class ViewCopyConverter(NodeConverter):
     supported_targets = [Target.RT700]
 
     @staticmethod
-    def _is_supported_in_IR(node: Node) -> bool:
+    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
         x = input_tensor(node, 0)
         y = output_tensor(node)
 

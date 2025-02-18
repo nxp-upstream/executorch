@@ -143,6 +143,13 @@ if __name__ == "__main__":
         help="Platform for running the delegated model",
     )
     parser.add_argument(
+        "-c", "--neutron_converter_flavor",
+        required=False,
+        default="wrapper",
+        help="Flavor of installed neutron-converter module. Neutron-converter module named "
+             "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
+    )
+    parser.add_argument(
         "-q",
         "--quantize",
         action="store_true",
@@ -246,6 +253,7 @@ if __name__ == "__main__":
             NeutronPartitioner(
                 generate_neutron_compile_spec(
                     args.target,
+                    args.neutron_converter_flavor,
                     operators_not_to_delegate=args.operators_not_to_delegate
                 )
             )

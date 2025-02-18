@@ -37,7 +37,7 @@ def test_neutron_backend__single_conv_model__payload_header_channels_last():
 
 
 def test_neutron_backend__linear_softmax_model__payload_header_formatless():
-    edge_program_manager = to_quantized_edge_program(LinearSoftmaxModule(), (1, 12), target=Target.IGNORE)
+    edge_program_manager = to_quantized_edge_program(LinearSoftmaxModule(), (1, 12))
     payload = edge_program_manager.exported_program().graph_module.lowered_module_0.processed_bytes
 
     assert payload[0] == 0x1  # Single input
@@ -85,14 +85,14 @@ def test_lowered_program_and_tflite_output_match__conv2d__no_bias(mocker):
     assert np.max(np.abs(output_edge - output_tflite)) <= 1
 
 
-def test_conv_fc_softmax__lowered_program_and_tflite_output_match(mocker):
+def test_conv_fc__lowered_program_and_tflite_output_match(mocker):
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     model = ConvFCSoftmaxModule()
     input_shape = (1, 4, 5, 5)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape, target=Target.IGNORE)
+    _ = to_quantized_edge_program(model, input_shape)
 
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
@@ -103,11 +103,10 @@ def test_conv_fc_softmax__lowered_program_and_tflite_output_match(mocker):
     # No Transpose ops in produced TFLite model
     tflite_subgraph = Model.GetRootAs(tflite_flatbuffers_model).Subgraphs(0)
 
-    assert tflite_subgraph.OperatorsLength() == 4
+    assert tflite_subgraph.OperatorsLength() == 3
     assert tflite_subgraph.Operators(0).BuiltinOptionsType() == BuiltinOptions.Conv2DOptions
     assert tflite_subgraph.Operators(1).BuiltinOptionsType() == BuiltinOptions.ReshapeOptions
     assert tflite_subgraph.Operators(2).BuiltinOptionsType() == BuiltinOptions.FullyConnectedOptions
-    assert tflite_subgraph.Operators(3).BuiltinOptionsType() == BuiltinOptions.SoftmaxOptions
 
     # Verify outputs of program and TFLite model
     input_data = (torch.randn(input_shape, dtype=torch.float32)).type(torch.int8).detach().numpy()

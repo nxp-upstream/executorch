@@ -35,6 +35,7 @@ class NeutronCompileSpecBuilder:
         self.compiler_flags = []
         self.output_format = None
         self.operators_not_to_delegate: List[str] = []
+        self.neutron_converter_flavor = None
 
     def _replace_colons(self, operator: str) -> str:
         """
@@ -45,6 +46,7 @@ class NeutronCompileSpecBuilder:
     def neutron_compile_spec(
         self,
         config: str,
+        neutron_converter_flavor: str,
         extra_flags: Optional[str] = None,
         operators_not_to_delegate: Optional[List[str]] = None,
     ):
@@ -61,16 +63,15 @@ class NeutronCompileSpecBuilder:
         except ValueError:
             raise ValueError(f'Config `{config}` is not a valid target. Must be one of `{Target.values()}`.')
 
-        assert (
-            self.output_format is None
-        ), f"Output format already set to f{self.output_format}"
-        self.output_format = "tflite"
-        self.compiler_flags = [
+        self.neutron_converter_flavor = neutron_converter_flavor
 
-        ]
+        assert (self.output_format is None), f"Output format already set to f{self.output_format}"
+        self.output_format = "tflite"
+        self.compiler_flags = []
+
         if extra_flags is not None:
             self.compiler_flags.append(extra_flags)
-            
+
         if operators_not_to_delegate is not None:
             self.operators_not_to_delegate = [self._replace_colons(op) for op in operators_not_to_delegate]
 
@@ -85,6 +86,7 @@ class NeutronCompileSpecBuilder:
                 CompileSpec("output_format", "tflite".encode()),
                 CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
                 CompileSpec("target", self.config.value.encode()),
+                CompileSpec("neutron_converter_flavor", self.neutron_converter_flavor.encode()),
                 CompileSpec("operators_not_to_delegate", ",".join(self.operators_not_to_delegate).encode())
             ]
 
@@ -93,12 +95,14 @@ class NeutronCompileSpecBuilder:
 
 def generate_neutron_compile_spec(
     config: str,  # The target platform. For example "imxrt700".
+    neutron_converter_flavor: str,
     system_config: Optional[str] = None,
     extra_flags: Optional[str] = None,
     operators_not_to_delegate: Optional[List[str]] = None,
 ) -> List[CompileSpec]:
     return NeutronCompileSpecBuilder().neutron_compile_spec(
         config,
+        neutron_converter_flavor,
         extra_flags=extra_flags,
         operators_not_to_delegate=operators_not_to_delegate
     ).build()
@@ -123,6 +127,7 @@ class NeutronBackend(BackendDetails):
         compile_flags = []
         binary = bytes()
         target = ""
+        neutron_converter_flavor = ""
         for spec in compile_spec:
             if spec.key == "output_format":
                 output_format = spec.value.decode()
@@ -132,6 +137,8 @@ class NeutronBackend(BackendDetails):
                 compile_flags.append(spec.value.decode())
             if spec.key == "operators_not_to_delegate":
                 operators_not_to_delegate = spec.value.decode().split(',')
+            if spec.key == "neutron_converter_flavor":
+                neutron_converter_flavor = spec.value.decode()
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -156,7 +163,7 @@ class NeutronBackend(BackendDetails):
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
 
-            neutron_model = NeutronConverterManager().convert(tflite_model, target)
+            neutron_model = NeutronConverterManager().convert(tflite_model, target, neutron_converter_flavor)
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):
@@ -169,7 +176,6 @@ class NeutronBackend(BackendDetails):
                 NeutronBackend.counter = NeutronBackend.counter + 1
 
             binary = PayloadComposer().get_binary_payload(io_formats, neutron_model)
-
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 

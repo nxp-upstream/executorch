@@ -10,7 +10,7 @@ def test_operator_selector_mechanism():
 
     operators_not_to_delegate = ["aten::convolution"]
 
-    edge_program_manager = to_quantized_edge_program(model, input_shape, target=Target.IGNORE, operators_not_to_delegate=operators_not_to_delegate)
+    edge_program_manager = to_quantized_edge_program(model, input_shape, operators_not_to_delegate=operators_not_to_delegate)
 
     exported_program = edge_program_manager.exported_program()
 

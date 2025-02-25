@@ -214,6 +214,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
     // Allocate place for input and output pointers.
     cfg->dcfg.inputs = static_cast<const void**>(context.allocate(cfg->numInputs * sizeof(void*)));
     cfg->dcfg.outputs = static_cast<void**>(context.allocate(cfg->numOutputs * sizeof(void*)));
+    cfg->dcfg.outputs[cfg->numOutputs] = static_cast<void**>(context.allocate(1 * sizeof(void*)));
 
     // Set inputs and outputs from args.    
     for (int i = 0; i < cfg->numInputs; i++) {

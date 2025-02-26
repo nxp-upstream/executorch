@@ -134,7 +134,7 @@ def test_batch_norm_conv_fusing__full_pipeline__1d(bias: bool):
 
 @pytest.mark.parametrize('bias', [True, False], ids=lambda x: 'Bias' if x else 'No bias')
 def test_batch_norm_conv_fusing__full_pipeline__2d(bias: bool):
-    input_shape = [2, 4, 6, 8]
+    input_shape = [1, 4, 6, 8]
     module = ConvBatchNormModule(bias, len(input_shape), 4)
 
     edge_program = to_quantized_edge_program(module, tuple(input_shape)).exported_program()

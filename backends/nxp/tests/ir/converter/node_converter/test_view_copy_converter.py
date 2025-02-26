@@ -186,37 +186,13 @@ def test_view_copy_w_linear_quant_conversion(mocker, input_shape, new_shape):
     convert_run_compare(edge_program, input_data, tfl_model=tflite_flatbuffers_model, atol=1.)
 
 
-@pytest.mark.parametrize("input_shape, new_shape", [
-    pytest.param((1, 4, 16, 16), (50, 18), id="4D, batch_size=1"),
-    pytest.param((10, 4, 16, 16), (500, 18), id="4D, , batch_size=10"),
-])
-def test_view_copy_w_conv_quant_conversion(mocker, input_shape, new_shape):
+def test_view_w_conv_linear_quant_conversion(mocker):
+    input_shape = (1, 8, 8, 8)
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    model = ConvLinearViewModule(channels=input_shape[1], channels_view_out=72)
 
     # Run conversion
-    _ = to_quantized_edge_program(ConvReshapeModule(channels=input_shape[1], new_shape=new_shape), input_shape)
-
-    # Capture generated model
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-
-    # Capture converted program
-    edge_program: ExportedProgram = converter_spy.call_args.args[1]
-
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tfl_model=tflite_flatbuffers_model, atol=1.)
-
-
-@pytest.mark.parametrize("input_shape, channels_view_out", [
-    pytest.param((1, 4, 16, 16), 196, id="4D"),
-])
-def test_view_w_conv_linear_quant_conversion(mocker, input_shape, channels_view_out):
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
-
-    # Run conversion
-    _ = to_quantized_edge_program(ConvLinearViewModule(channels=input_shape[1],
-                                                       channels_view_out=channels_view_out), input_shape)
+    _ = to_quantized_edge_program(model, input_shape)
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return

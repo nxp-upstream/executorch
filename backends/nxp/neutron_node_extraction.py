@@ -36,12 +36,17 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
 
     sub_graph = model.Subgraphs(0)
 
-    if sub_graph.OperatorsLength() != 1:
-        logging.warning(f'Model has `{sub_graph.OperatorsLength()}` Operators instead of `1`.')
+    if sub_graph.OperatorsLength() == 0:
+        raise RuntimeError(f'Model converted with neutron-converter has `0` operators instead of `1`.')
+    elif sub_graph.OperatorsLength() > 1:
+        builtin_operators_map: dict[int, str] = {y: x for x, y in BuiltinOperator.__dict__.items()}
 
-        # TODO Raise an exception in the future, because the graph should only contain the 1 node. Multiple nodes
-        #  indicate an issue with the Partitioner.
-        # raise RuntimeError(f'Model has `{sub_graph.OperatorsLength()}` Operators instead of `1`.')
+        opcodes = [model.OperatorCodes(i) for i in range(model.OperatorCodesLength())]
+        nodes = [sub_graph.Operators(i) for i in range(sub_graph.OperatorsLength())]
+        ops_found = [builtin_operators_map[opcodes[node.OpcodeIndex()].BuiltinCode()] for node in nodes]
+
+        raise RuntimeError(f'Model converted with neutron-converter has `{sub_graph.OperatorsLength()}` operators '
+                           f'instead of `1`. Operators found: {", ".join(ops_found)}.')
 
     neutron_node = None
     opcodes = [model.OperatorCodes(i) for i in range(model.OperatorCodesLength())]
@@ -52,7 +57,8 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
             neutron_node = sub_graph.Operators(i)
             break
 
-    assert neutron_node is not None, 'The provided model does not contain a Neutron Node.'
+    if neutron_node is None:
+        raise RuntimeError('Model converted with neutron-converter does not contain a NeutronGraph node.')
 
     # The last 3 input tensors of the Neutron Node contain:
     #   1. Neutron Microcode

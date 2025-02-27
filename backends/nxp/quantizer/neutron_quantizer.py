@@ -234,6 +234,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
             ]
         )
+        self.op_to_quantizer = {pt:q for q in self.quantizers for pt in q.pattern.partition_types()}
+        self.op_to_applied_quantizer = {pt:False for q in self.quantizers for pt in q.pattern.partition_types()}
 
     def transform_for_annotation(
             self, model: torch.fx.GraphModule
@@ -241,7 +243,17 @@ class NeutronQuantizer(ComposableQuantizer):
         return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        return super().annotate(model)
+        nodes = list(model.graph.nodes)
+        for node in nodes:
+            if node.target not in self.op_to_quantizer or self.op_to_applied_quantizer[node.target]:
+                continue
+            else:
+                quantizer = self.op_to_quantizer[node.target]
+                quantizer.annotate(model)
+                if not isinstance(quantizer.pattern, SharedSpecPattern):
+                    self.op_to_applied_quantizer[node.target]= True
+
+        return model
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         return super().validate(model)

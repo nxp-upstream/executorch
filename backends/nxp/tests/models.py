@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
-
 from typing import Collection, Union
+
+import torch
 
 
 class Conv2dModule(torch.nn.Module):
@@ -17,12 +17,13 @@ class Conv2dModule(torch.nn.Module):
                  out_channels: int = 8,
                  padding: Union[str, int, Collection[int]] = 0,
                  stride: Union[int, tuple[int, int]] = 2,
-    ):
+                 group: int = 1
+                 ):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
             in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-            stride=stride, padding=padding, dilation=dilation, bias=bias,
+            stride=stride, padding=padding, dilation=dilation, bias=bias, groups=group
         )
 
     def forward(self, x):

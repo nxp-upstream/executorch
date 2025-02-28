@@ -4,7 +4,7 @@
 # License: LA_OPT_NXP_Software_License
 # See the LICENSE_LA_OPT_NXP_Software_License for more details.
 #
-
+import warnings
 from typing import Dict, Union
 
 import numpy
@@ -15,6 +15,8 @@ from torch.export import ExportedProgram
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import \
+    create_channels_first_to_channels_last_permutation, create_channels_last_to_channels_first_permutation
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -31,10 +33,12 @@ class EdgeProgramExecutor:
     def inference(self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]) \
             -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
 
-        if not isinstance(input_data, numpy.ndarray):
-            raise RuntimeError("Edge program inference with multiple inputs not implemented")
+        if isinstance(input_data, numpy.ndarray):
+            program_inputs = [torch.from_numpy(input_data)]
+        else:
+            program_inputs = [torch.from_numpy(in_data) for in_data in input_data.values()]
 
-        output = self.edge_program.module()(torch.from_numpy(input_data))
+        output = self.edge_program.module()(*program_inputs)
 
         if isinstance(output, torch.Tensor):
             return output.detach().numpy()
@@ -150,21 +154,59 @@ def compare_output_arrays(tfl_output: np.ndarray, edge_output: np.ndarray, outpu
 
 class TFLiteIOPreprocess:
 
-    def preprocess(self, data: np.ndarray):
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
         return data
+
+
+class ToChannelFirstPreprocess(TFLiteIOPreprocess):
+    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
+        def get_channel_first_permutation(tensor):
+            return create_channels_last_to_channels_first_permutation(len(tensor.shape))
+
+        transpose_fn = lambda x: np.transpose(x, get_channel_first_permutation(x))
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
+
+
+class ToChannelLastPreprocess(TFLiteIOPreprocess):
+    def preprocess(self, data: np.ndarray | dict[int, np.ndarray]):
+        def get_channel_last_permutation(tensor):
+            return create_channels_first_to_channels_last_permutation(len(tensor.shape))
+
+        transpose_fn = lambda x: np.transpose(x, get_channel_last_permutation(x))
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 
 class ToNHWCPreprocess(TFLiteIOPreprocess):
 
-    def preprocess(self, data: np.ndarray):
-        assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"
-        return np.transpose(data, [0, 2, 3, 1])
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
+        warnings.warn("Method is deprecated. Use ToChannelFirstPreprocess/ToChannelLastPreprocess instead.",
+                      DeprecationWarning)
+        transpose_fn = lambda x: np.transpose(x, [0, 2, 3, 1])
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 class ToNCHWPreprocess(TFLiteIOPreprocess):
 
-    def preprocess(self, data: np.ndarray):
-        assert isinstance(data, np.ndarray), "Only single Numpy array preprocessing is currently supported"
-        return np.transpose(data, [0, 3, 1, 2])
+    def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
+        warnings.warn("Method is deprecated. Use ToChannelFirstPreprocess/ToChannelLastPreprocess instead.",
+                      DeprecationWarning)
+        transpose_fn = lambda x: np.transpose(x, [0, 3, 1, 2])
+        if isinstance(data, np.ndarray):
+            preprocessed_data = transpose_fn(data)
+        else:
+            preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
+        return preprocessed_data
 
 
 

@@ -189,6 +189,7 @@ supported_ops = {
     exir_ops.edge.aten.relu.default: ReLUConverter,
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
+    exir_ops.edge.aten.add.Tensor: AddTensorConverter,
 }
 
 

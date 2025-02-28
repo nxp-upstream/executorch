@@ -18,10 +18,12 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     MaxPool2dConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import \
     AvgPool2dConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.add_tensor_converter import \
+    AddTensorConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import \
     ReLUConverter
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
-    "MaxPool2dConverter", "AvgPool2dConverter"
+    "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter"
 ]

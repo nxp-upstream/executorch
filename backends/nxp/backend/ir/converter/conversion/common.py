@@ -14,6 +14,8 @@ This file contains functions shared by the various files in the
 
 from typing import List, MutableSequence, Optional, Any
 
+from torch.fx import Node
+
 import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
@@ -149,6 +151,25 @@ def uses_shape_broadcasting(t_op: tflite_model.Operator) -> bool:
     first_input_shape = t_op.tmp_inputs[0].shape
 
     return any([input_tensor.shape != first_input_shape for input_tensor in t_op.tmp_inputs[1:]])
+
+
+def node_uses_shape_broadcasting(node: Node) -> bool:
+    """ Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+        :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+        :return: True, if the node uses shape broadcasting for it's input nodes.
+                 False otherwise.
+        """
+
+    if node.all_input_nodes is None:
+        logger.e(logger.Code.INTERNAL_ERROR, "common.node_uses_shape_broadcasting(): 'all_input_nodes' are None!")
+
+    if len(node.all_input_nodes) == 0:
+        logger.e(logger.Code.INTERNAL_ERROR, "common.node_uses_shape_broadcasting(): Operator has no inputs!")
+
+    first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+    return any([input_tensor.meta["val"].shape != first_input_shape for input_tensor in node.all_input_nodes[1:]])
 
 
 def uses_multiple_input_types(t_op: tflite_model.Operator) -> bool:

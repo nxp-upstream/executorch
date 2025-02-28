@@ -215,6 +215,36 @@ class SoftMaxPattern(QuantizationPattern):
         assert False
 
 
+class AddTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Add Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.ops.aten.add.Tensor]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, 0)]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, 0), (node, 1)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        assert False
+
+
 class NeutronQuantizer(ComposableQuantizer):
     def __init__(self):
         static_qconfig = QuantizationConfig(
@@ -235,6 +265,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
                 CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
                 CadenceAtenQuantizer(LinearPattern(), static_fc_qconfig),
+                CadenceAtenQuantizer(AddTensorPattern(), static_qconfig),
                 CadenceAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(SoftMaxPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReshapePattern(), static_qconfig),

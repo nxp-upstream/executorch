@@ -28,11 +28,15 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
     return m
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operators_not_to_delegate: list[str] = None,
-                              target="imxrt700", neutron_converter_flavor="wrapper",
-                              remove_quant_io_ops=False) -> EdgeProgramManager:
-    calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
-    example_input = (torch.ones(*input_shape),)
+def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]],
+                              operators_not_to_delegate: list[str] = None, target="imxrt700",
+                              neutron_converter_flavor="wrapper", remove_quant_io_ops=False)\
+        -> EdgeProgramManager:
+    random_tensors  = (torch.randn(input_shapes),) if type(input_shapes) is tuple \
+        else tuple(torch.randn(input_shape) for input_shape in input_shapes)
+    calibration_inputs = [random_tensors, random_tensors]
+    example_input = (torch.ones(input_shapes),) if type(input_shapes) is tuple \
+        else tuple(torch.ones(input_shape) for input_shape in input_shapes)
 
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_input)
 
@@ -56,15 +60,21 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operat
     return edge_program_manager
 
 
-def to_quantized_executorch_program(model: torch.nn.Module, input_shape: tuple) -> ExecutorchProgramManager:
-    edge_program_manager = to_quantized_edge_program(model, input_shape)
+def to_quantized_executorch_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]]) \
+        -> ExecutorchProgramManager:
+    edge_program_manager = to_quantized_edge_program(model, input_shapes)
 
     return edge_program_manager.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
 
-def to_edge_program(model: nn.Module, input_shape) -> EdgeProgramManager:
-    example_input = (torch.ones(input_shape),)
+def to_edge_program(model: nn.Module, input_shapes: tuple[int] | list[int] | list[tuple[int]]) -> EdgeProgramManager:
+    # some old tests use list for input_shapes
+    if type(input_shapes) is list and all([type(x) is int for x in input_shapes]):
+        input_shapes = tuple(input_shapes)
+
+    example_input = (torch.ones(input_shapes),) if type(input_shapes) is tuple \
+        else tuple(torch.ones(input_shape) for input_shape in input_shapes)
     exir_program = torch.export.export(model, example_input)
     return exir.to_edge(exir_program)

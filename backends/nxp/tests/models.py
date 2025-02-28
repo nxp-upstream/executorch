@@ -221,3 +221,31 @@ class Conv2dPermuteModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return torch.permute(x, [0, 2, 1])
+
+
+class AddTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x + y
+
+
+class AddTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x + x
+
+
+class AddTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x + x

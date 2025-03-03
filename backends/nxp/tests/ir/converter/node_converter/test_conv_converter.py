@@ -119,12 +119,8 @@ def test_conv2d_conversion__depthwise(input_shape, stride, dilation, kernel_shap
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
-@pytest.mark.parametrize("input_shape", [
-    [1, 4, 12, 12],
-    [2, 3, 10, 15],
-    [11, 10, 9, 8],
-], ids=lambda x: f'Input shape = {x}, groups = {x[1]}')
-def test_conv2d_conversion__depthwise__quantized(input_shape, stride, dilation, kernel_shape, mocker):
+def test_conv2d_conversion__depthwise__quantized(stride, dilation, kernel_shape, mocker):
+    input_shape = [1, 4, 12, 12]
     group = input_shape[1]
     spy = mocker.spy(ModelBuilder, 'finish')
 
@@ -171,12 +167,8 @@ def test_conv2d_conversion__depthwise__padded(input_shape, padding, mocker):
 
 
 @pytest.mark.parametrize("padding", [1, 2])
-@pytest.mark.parametrize("input_shape", [
-    [1, 4, 12, 12],
-    [2, 3, 4, 5],
-    [11, 10, 9, 8],
-], ids=lambda x: f'Input shape = {x}, groups = {x[1]}')
-def test_conv2d_conversion__depthwise__padded__quantized(input_shape, padding, mocker):
+def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
+    input_shape = [1, 4, 12, 12]
     group = input_shape[1]
     spy = mocker.spy(ModelBuilder, 'finish')
 

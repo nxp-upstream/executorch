@@ -6,6 +6,7 @@ import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_executorch_program
 from executorch.backends.nxp.tests.models import ConvFCSoftmaxModule
 from executorch.devtools.backend_debug import get_delegation_info
+from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 
 _CURRENT_DIR = pathlib.Path(__file__).parent
 _PROJECT_DIR = _CURRENT_DIR.parent.parent.parent
@@ -42,3 +43,19 @@ def test_conv_fc_softmax__to_executorch_program():
         # Make sure Convolution and AddMM are delegated
         assert "convolution" not in node.name
         assert "addmm" not in node.name
+
+
+def test_cifarnet():
+    torch.ops.load_library(str(_get_quantized_ops_aot_lib_path()))
+
+    model = CifarNet().get_eager_model().eval()
+    input_shape = (1, 3, 32, 32)
+    exec_prog = to_quantized_executorch_program(model, input_shape)
+
+    delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
+    assert delegation_info.num_delegated_subgraphs == 1
+    assert delegation_info.num_non_delegated_nodes == 17
+    assert delegation_info.num_delegated_nodes == 42
+
+    nodes = list(exec_prog.exported_program().graph.nodes)
+    assert nodes[2].name == 'quantized_decomposed_quantize_per_tensor_default'

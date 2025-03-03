@@ -14,11 +14,13 @@ from torch._ops import OpOverload
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.quantizer import (
     FixedQParamsQuantizationSpec,
-    SharedQuantizationSpec,
+    SharedQuantizationSpec, QuantizationAnnotation,
 )
 from torch.ao.quantization.quantizer import QuantizationSpec
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+from torch.ao.quantization.quantizer.utils import _annotate_output_qspec, _annotate_input_qspec_map
 from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
+from torch.fx import GraphModule, Node
 
 from executorch.backends.cadence.aot.quantizer.patterns import (
     QuantizationPattern,
@@ -244,8 +246,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
-        self.op_to_quantizer = {pt:q for q in self.quantizers for pt in q.pattern.partition_types()}
-        self.op_to_applied_quantizer = {pt:False for q in self.quantizers for pt in q.pattern.partition_types()}
+        self.op_to_quantizer = {pt: q for q in self.quantizers for pt in q.pattern.partition_types()}
+        self.op_to_applied_quantizer = {pt: False for q in self.quantizers for pt in q.pattern.partition_types()}
 
     def transform_for_annotation(
             self, model: torch.fx.GraphModule
@@ -253,6 +255,8 @@ class NeutronQuantizer(ComposableQuantizer):
         return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        self._annotate_inputs(model)
+
         nodes = list(model.graph.nodes)
         for node in nodes:
             if node.target not in self.op_to_quantizer or self.op_to_applied_quantizer[node.target]:
@@ -261,9 +265,29 @@ class NeutronQuantizer(ComposableQuantizer):
                 quantizer = self.op_to_quantizer[node.target]
                 quantizer.annotate(model)
                 if not isinstance(quantizer.pattern, SharedSpecPattern):
-                    self.op_to_applied_quantizer[node.target]= True
+                    self.op_to_applied_quantizer[node.target] = True
 
         return model
+
+    def _is_input_annotated(self, node: Node) -> bool:
+        return (
+                "quantization_annotation" in node.meta
+                and node.meta["quantization_annotation"]._annotated
+        )
+
+    def _mark_input_node_as_annotated(self, node: Node) -> None:
+        if "quantization_annotation" not in node.meta:
+            node.meta["quantization_annotation"] = QuantizationAnnotation()
+        node.meta["quantization_annotation"]._annotated = True
+
+    def _annotate_inputs(self, model: GraphModule):
+        for node in model.graph.nodes:
+            if self._is_input_annotated(node):
+                continue
+
+            if node.op == "placeholder" and len(node.users) > 0:
+                _annotate_output_qspec(node, act_qspec)
+                self._mark_input_node_as_annotated(node)
 
     def validate(self, model: torch.fx.GraphModule) -> None:
         return super().validate(model)

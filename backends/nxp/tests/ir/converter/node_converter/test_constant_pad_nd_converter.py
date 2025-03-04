@@ -2,11 +2,9 @@ import numpy as np
 import pytest
 import torch
 
-from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
-from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWPreprocess, ToNHWCPreprocess
 from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program, to_quantized_edge_program
-from executorch.backends.nxp.tests.models import ConstantPadNDModule, ConstantPadNDConvModule, Conv2dConstantPadNDModule
-from torch.export import ExportedProgram
+from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWPreprocess, ToNHWCPreprocess
+from executorch.backends.nxp.tests.models import ConstantPadNDModule, ConstantPadNDConvModule
 
 
 @pytest.fixture(autouse=True)
@@ -46,18 +44,12 @@ def test_constant_pad_nd_conversion__default_constant():
 
     pytest.param([2, 4, 6], list(range(2)), id='3D, padding H'),
     pytest.param([2, 4, 6], list(range(4)), id='3D, padding C, H'),
-    pytest.param([2, 4, 6], list(range(6)), id='3D, padding N, C, H'),
 
     pytest.param([2, 4, 6, 8], list(range(2)), id='4D, padding W'),
     pytest.param([2, 4, 6, 8], list(range(4)), id='4D, padding H, W'),
-    pytest.param([2, 4, 6, 8], list(range(6)), id='4D, padding C, H, W'),
-    pytest.param([2, 4, 6, 8], list(range(8)), id='4D, padding N, C, H, W'),
 
     pytest.param([1, 2, 3, 4, 5], list(range(2)), id='5D, padding D'),
     pytest.param([1, 2, 3, 4, 5], list(range(4)), id='5D, padding W, D'),
-    pytest.param([1, 2, 3, 4, 5], list(range(6)), id='5D, padding H, W, D'),
-    pytest.param([1, 2, 3, 4, 5], list(range(8)), id='5D, padding C, H, W, D'),
-    pytest.param([1, 2, 3, 4, 5], list(range(10)), id='5D, padding N, C, H, W, D'),
 ])
 def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
     edge_program = to_edge_program(ConstantPadNDModule(paddings), input_shape).exported_program()
@@ -70,13 +62,30 @@ def test_constant_pad_nd_conversion__format_less(input_shape, paddings):
 @pytest.mark.parametrize("input_shape, paddings", [
     pytest.param([1, 4, 6, 8], list(range(2)), id='4D, padding W'),
     pytest.param([1, 4, 6, 8], list(range(4)), id='4D, padding H, W'),
-    pytest.param([1, 1, 6, 8], [1, 2, 3, 4, 2, 1], id='4D, padding C, H, W'),
-    # pytest.param([1, 1, 6, 8], [1, 2, 3, 4, 2, 1, 5, 6], id='4D, padding N, C, H, W'),  # Batch size must stay 0.
 ])
 def test_constant_pad_nd_conversion__channels_first(input_shape, paddings):
-    edge_program = to_edge_program(ConstantPadNDConvModule(paddings), input_shape).exported_program()  # Extra `Conv` after the padding.
+    model = ConstantPadNDConvModule(paddings)
+    edge_program = to_edge_program(model, input_shape).exported_program()  # Extra `Conv` after the padding.
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
     convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
                         tflite_output_preprocess=ToNCHWPreprocess())
+
+
+@pytest.mark.parametrize("input_shape, paddings", [
+    pytest.param([2, 4, 6], list(range(6)), id='3D, padding N, C, H'),
+    pytest.param([2, 4, 6, 8], list(range(6)), id='4D, padding C, H, W'),
+    pytest.param([2, 4, 6, 8], list(range(8)), id='4D, padding N, C, H, W'),
+    pytest.param([1, 2, 3, 4, 5], list(range(6)), id='5D, padding H, W, D'),
+    pytest.param([1, 2, 3, 4, 5], list(range(8)), id='5D, padding C, H, W, D'),
+    pytest.param([1, 2, 3, 4, 5], list(range(10)), id='5D, padding N, C, H, W, D'),
+    pytest.param([1, 1, 6, 8], [1, 2, 3, 4, 2, 1], id='4D, padding C, H, W'),
+])
+def test_constant_pad_nd__unsupported_paddings(input_shape, paddings):
+    model = ConstantPadNDModule(paddings)
+    exec_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    nodes = list(exec_program.graph.nodes)
+    # There is at least one non-delegated Pad node
+    assert any([node.name == "aten_constant_pad_nd_default" for node in nodes])

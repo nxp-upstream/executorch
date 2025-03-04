@@ -14,6 +14,7 @@ from typing import Iterator
 import torch
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
+from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import RemoveIOQuantOpsPass
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
@@ -178,6 +179,15 @@ if __name__ == "__main__":
         help="Test the selected model and print the accuracy between 0 and 1.",
     )
     parser.add_argument(
+        "-r",
+        "--remove-quant-io-ops",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Remove I/O De/Quantize nodes. Model will start to accept quantized "
+             "inputs and produce quantized outputs.",
+    )
+    parser.add_argument(
         "--operators_not_to_delegate",
         required=False,
         default=[],
@@ -245,6 +255,11 @@ if __name__ == "__main__":
                                   verbose=args.debug)  # TODO for now reusing the default for edge_compile_config
     # (compared to Arm)
     logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
+
+    if args.remove_quant_io_ops:
+        edge_program = edge_program.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program)]
+        )
 
     # 6. Delegate to Neutron
     if args.delegate is True:

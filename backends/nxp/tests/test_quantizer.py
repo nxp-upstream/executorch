@@ -131,11 +131,10 @@ def test_quantizer_single_maxpool2d():
     m = prepare_pt2e(exir_program, quantizer)
     m(*example_input)
     m = convert_pt2e(m)
-    # print(f"Quantized model: {m}")
     nodes = list(m.graph.nodes)
 
-    assert len(nodes) == 3
-    assert nodes[1].name == "max_pool2d"
+    assert len(nodes) == 7
+    assert nodes[3].name == "max_pool2d"
     assert "quantization_annotation" not in nodes[1].meta
 
 

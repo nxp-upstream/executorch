@@ -8,6 +8,7 @@ from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
 from executorch import exir
+from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import RemoveIOQuantOpsPass
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
@@ -28,7 +29,8 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
 
 
 def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operators_not_to_delegate: list[str] = None,
-                              target="imxrt700", neutron_converter_flavor="wrapper") -> EdgeProgramManager:
+                              target="imxrt700", neutron_converter_flavor="wrapper",
+                              remove_quant_io_ops=False) -> EdgeProgramManager:
     calibration_inputs = [(torch.randn(input_shape),), (torch.randn(input_shape),)]
     example_input = (torch.ones(*input_shape),)
 
@@ -40,6 +42,11 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shape: tuple, operat
 
     exir_program_aten_quant = _quantize_model(exir_program_aten, calibration_inputs)
     edge_program_manager = export_to_edge(exir_program_aten_quant, example_input)
+
+    if remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
 
     compile_spec = generate_neutron_compile_spec(target, operators_not_to_delegate=operators_not_to_delegate,
                                                  neutron_converter_flavor=neutron_converter_flavor)

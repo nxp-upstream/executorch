@@ -31,6 +31,7 @@ functions_converters = {
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,
+    exir_ops.edge.aten.mean.dim: MeanDimConverter,
 }
 
 

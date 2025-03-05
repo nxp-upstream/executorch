@@ -22,8 +22,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     AddTensorConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import \
     ReLUConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import \
+    MeanDimConverter
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
-    "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter"
+    "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter", "MeanDimConverter"
 ]

@@ -169,6 +169,15 @@ class ViewPattern(SharedSpecPattern):
         return [torch.ops.aten.view.default]
 
 
+class FlattenPattern(SharedSpecPattern):
+    """
+    Quantizer for Flatten operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.flatten.using_ints]
+
+
 class PermutePattern(SharedSpecPattern):
     """
     Quantizer for Permute operator.
@@ -176,6 +185,15 @@ class PermutePattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.permute.default]
+
+
+class MeanDimPattern(SharedSpecPattern):
+    """
+    Quantizer for Mean Dim operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.mean.dim]
 
 
 class SoftMaxPattern(QuantizationPattern):
@@ -275,6 +293,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),
+                CadenceAtenQuantizer(MeanDimPattern(), static_qconfig),
+                CadenceAtenQuantizer(FlattenPattern(), static_qconfig),
             ]
         )
         self.op_to_quantizer = {pt: q for q in self.quantizers for pt in q.pattern.partition_types()}

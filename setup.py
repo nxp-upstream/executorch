@@ -698,6 +698,7 @@ setup(
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.
         "executorch/examples/models": "examples/models",
+        "executorch/examples/nxp/cifar_net": "examples/nxp/cifar_net",
         "executorch/exir": "exir",
         "executorch/extension": "extension",
         "executorch/kernels/quantized": "kernels/quantized",

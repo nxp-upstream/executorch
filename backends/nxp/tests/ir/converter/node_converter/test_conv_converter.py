@@ -91,7 +91,7 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
 def test_conv2d_conversion__depthwise(stride, dilation, kernel_shape, mocker):
-    input_shape = [1, 3, 12, 16]
+    input_shape = (1, 3, 12, 16)
     group = input_shape[1]
     edge_program = to_edge_program(
         Conv2dModule(group=group, in_channels=group, out_channels=group, stride=stride, dilation=dilation,
@@ -116,7 +116,7 @@ def test_conv2d_conversion__depthwise(stride, dilation, kernel_shape, mocker):
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("kernel_shape", [[1, 2], [3, 3], [4, 1]])
 def test_conv2d_conversion__depthwise__quantized(stride, dilation, kernel_shape, mocker):
-    input_shape = [1, 4, 12, 12]
+    input_shape = (1, 4, 12, 12)
     group = input_shape[1]
     spy = mocker.spy(ModelBuilder, 'finish')
 
@@ -137,7 +137,7 @@ def test_conv2d_conversion__depthwise__quantized(stride, dilation, kernel_shape,
 
 @pytest.mark.parametrize("padding", [1, 2])
 def test_conv2d_conversion__depthwise__padded(padding, mocker):
-    input_shape = [1, 3, 13, 15]
+    input_shape = (1, 3, 13, 15)
     group = input_shape[1]
     edge_program = to_edge_program(
         Conv2dModule(group=group, in_channels=group, out_channels=group, padding=padding),
@@ -160,7 +160,7 @@ def test_conv2d_conversion__depthwise__padded(padding, mocker):
 
 @pytest.mark.parametrize("padding", [1, 2])
 def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
-    input_shape = [1, 4, 12, 12]
+    input_shape = (1, 4, 12, 12)
     group = input_shape[1]
     spy = mocker.spy(ModelBuilder, 'finish')
 
@@ -182,9 +182,9 @@ def test_conv2d_conversion__depthwise__padded__quantized(padding, mocker):
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("input_shape, group, out_channels", [
-    ([1, 4, 12, 12], 2, 2),
-    ([2, 3, 8, 15], 3, 6),
-    ([11, 16, 9, 8], 4, 16)
+    ((1, 4, 12, 12), 2, 2),
+    ((2, 3, 8, 15), 3, 6),
+    ((11, 16, 9, 8), 4, 16)
 ])
 def test_conv2d_conversion__separated(input_shape, group, out_channels, stride, dilation):
     edge_program = to_edge_program(
@@ -212,9 +212,9 @@ def test_conv2d_conversion__separated(input_shape, group, out_channels, stride, 
 @pytest.mark.parametrize("stride", [1, 2])
 @pytest.mark.parametrize("dilation", [1, 2])
 @pytest.mark.parametrize("input_shape, group, out_channels", [
-    ([1, 4, 12, 12], 2, 2),
-    ([2, 3, 17, 9], 3, 6),
-    ([11, 16, 9, 8], 4, 16)
+    ((1, 4, 12, 12), 2, 2),
+    ((2, 3, 17, 9), 3, 6),
+    ((11, 16, 9, 8), 4, 16)
 ])
 def test_conv2d_conversion__separated__quantized(input_shape, group, out_channels, stride, dilation):
     # spy = mocker.spy(ModelBuilder, 'finish')
@@ -239,9 +239,9 @@ def test_conv2d_conversion__separated__quantized(input_shape, group, out_channel
 
 @pytest.mark.parametrize("padding", [1, 2])
 @pytest.mark.parametrize("input_shape, group, out_channels", [
-    ([1, 4, 12, 12], 2, 2),
-    ([2, 3, 4, 5], 3, 6),
-    ([11, 16, 9, 8], 4, 16)
+    ((1, 4, 12, 12), 2, 2),
+    ((2, 3, 4, 5), 3, 6),
+    ((11, 16, 9, 8), 4, 16)
 ])
 def test_conv2d_conversion__separated__padded(input_shape, group, out_channels, padding):
     edge_program = to_edge_program(
@@ -270,9 +270,9 @@ def test_conv2d_conversion__separated__padded(input_shape, group, out_channels, 
 
 @pytest.mark.parametrize("padding", [1, 2])
 @pytest.mark.parametrize("input_shape, group, out_channels", [
-    ([1, 4, 12, 12], 2, 2),
-    ([2, 3, 4, 5], 3, 6),
-    ([11, 16, 9, 8], 4, 16)
+    ((1, 4, 12, 12), 2, 2),
+    ((2, 3, 4, 5), 3, 6),
+    ((11, 16, 9, 8), 4, 16)
 ])
 def test_conv2d_conversion__separated__padded__quantized(input_shape, group, out_channels, padding):
     # spy = mocker.spy(ModelBuilder, 'finish')

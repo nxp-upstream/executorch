@@ -32,6 +32,10 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] |
                               operators_not_to_delegate: list[str] = None, target="imxrt700",
                               neutron_converter_flavor="wrapper", remove_quant_io_ops=False)\
         -> EdgeProgramManager:
+    if isinstance(input_shapes, list):
+        assert all([isinstance(input_shape, tuple) for input_shape in input_shapes]), ("For multiple inputs, provide"
+                                                                                       " list[tuple[int]].")
+
     random_tensors  = (torch.randn(input_shapes),) if type(input_shapes) is tuple \
         else tuple(torch.randn(input_shape) for input_shape in input_shapes)
     calibration_inputs = [random_tensors, random_tensors]
@@ -69,10 +73,10 @@ def to_quantized_executorch_program(model: torch.nn.Module, input_shapes: tuple[
     )
 
 
-def to_edge_program(model: nn.Module, input_shapes: tuple[int] | list[int] | list[tuple[int]]) -> EdgeProgramManager:
-    # some old tests use list for input_shapes
-    if type(input_shapes) is list and all([type(x) is int for x in input_shapes]):
-        input_shapes = tuple(input_shapes)
+def to_edge_program(model: nn.Module, input_shapes: tuple[int] | list[tuple[int]]) -> EdgeProgramManager:
+    if isinstance(input_shapes, list):
+        assert all([isinstance(input_shape, tuple) for input_shape in input_shapes]), ("For multiple inputs, provide"
+                                                                                       " list[tuple[int]].")
 
     example_input = (torch.ones(input_shapes),) if type(input_shapes) is tuple \
         else tuple(torch.ones(input_shape) for input_shape in input_shapes)

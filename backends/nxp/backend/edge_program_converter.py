@@ -22,6 +22,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 functions_converters = {
     exir_ops.edge.aten.addmm.default: AddMMConverter,
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,
+    exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,
     exir_ops.edge.aten.max_pool2d.default: MaxPool2dConverter,

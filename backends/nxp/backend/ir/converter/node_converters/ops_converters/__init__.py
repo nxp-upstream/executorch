@@ -20,6 +20,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     AvgPool2dConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.add_tensor_converter import \
     AddTensorConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.adaptive_avg_pool_2d_converter import \
+    AdaptiveAvgPool2dConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import \
     ReLUConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mean_dim_converter import \
@@ -27,5 +29,5 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
-    "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter", "MeanDimConverter"
+    "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter", "MeanDimConverter", "AdaptiveAvgPool2dConverter"
 ]

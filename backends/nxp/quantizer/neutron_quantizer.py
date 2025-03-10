@@ -123,6 +123,15 @@ class AvgPoolPattern(SharedSpecPattern):
         return [torch.ops.aten.avg_pool2d.default]
 
 
+class AdaptiveAvgPoolPattern(SharedSpecPattern):
+    """
+    Quantizer for AdaptiveAvgPool2D operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.adaptive_avg_pool2d.default]
+
+
 class PadPattern(SharedSpecPattern):
     """
     Quantizer for Pad operator.
@@ -293,6 +302,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),
+                CadenceAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(MeanDimPattern(), static_qconfig),
                 CadenceAtenQuantizer(FlattenPattern(), static_qconfig),
             ]

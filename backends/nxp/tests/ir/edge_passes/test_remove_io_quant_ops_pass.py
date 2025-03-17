@@ -86,9 +86,9 @@ def test_remove_io_quant_ops_pass__kws():
     )
 
     nodes = list(exec_prog.exported_program().graph.nodes)
-    assert len(nodes) == 26
+    assert len(nodes) == 5
     assert nodes[0].meta["val"].dtype == torch.int8, "Input tensor doesn't have type INT8."
-    assert nodes[25].meta["val"][0].dtype == torch.int8, "Output tensor doesn't have type INT8."
+    assert nodes[4].meta["val"][0].dtype == torch.int8, "Output tensor doesn't have type INT8."
 
     assert get_config_method_name(None, "input", 0, "scale") in exec_prog._config_methods
     assert get_config_method_name(None, "input", 0, "zp") in exec_prog._config_methods

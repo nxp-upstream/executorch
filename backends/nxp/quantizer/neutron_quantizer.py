@@ -141,6 +141,15 @@ class PadPattern(SharedSpecPattern):
         return [torch.ops.aten.pad.default]
 
 
+class DropoutPattern(SharedSpecPattern):
+    """
+    Quantizer for Dropout operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.dropout.default]
+
+
 class ReluPattern(SharedSpecPattern):
     """
     Quantizer for Relu operator. Shared quantization spec is selected, as ReLU usually follows computation layer.
@@ -305,6 +314,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(MeanDimPattern(), static_qconfig),
                 CadenceAtenQuantizer(FlattenPattern(), static_qconfig),
+                CadenceAtenQuantizer(DropoutPattern(), static_qconfig),
             ]
         )
         self.op_to_quantizer = {pt: q for q in self.quantizers for pt in q.pattern.partition_types()}

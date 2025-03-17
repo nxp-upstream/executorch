@@ -33,6 +33,7 @@ functions_converters = {
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,
     exir_ops.edge.aten.mean.dim: MeanDimConverter,
+    exir_ops.edge.aten.clone.default: CloneConverter,
 }
 
 

@@ -4,13 +4,15 @@ from gvgen import GvGen
 from torch.export import ExportedProgram
 
 
-def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="graph.dot", show_tags=True):
+def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="graph.dot", show_tags=True,
+                            show_arguments=True):
     """
     Generate dot file for tagged exported program.
 
     :param exported_program: Exported program with optional meta values: 'delegation_tag' and 'cluster'.
     :param dot_file_name: Produced .dot file name.
     :param show_tags: If True, nodes will be shown as a subcomponent of tag nodes.
+    :param show_arguments: If True, node arguments will be shown in exported dot file.
     """
     graph = GvGen()
 
@@ -36,15 +38,26 @@ def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="gr
                 delegation_tags[tag] = item
 
     for node in exported_program.graph.nodes:
+        item_text = [node.name]
+
+        if show_arguments and len(node.args) > 0:
+            for i, arg in enumerate(node.args):
+                arg_text = f"arg{i}: {str(arg)}"
+                arg_text = arg_text[:45] + (arg_text[45:] and '..')
+                item_text.append(arg_text)
+
+            max_entry_len = len(max(item_text, key=len))
+            item_text.insert(1, "-" * max_entry_len)
+
         if "delegation_tag" in node.meta and show_tags:
             # Delegated node -> add color
             tag = node.meta["delegation_tag"]
-            item = graph.newItem(node.name, delegation_tags[tag])
+            item = graph.newItem("\n".join(item_text), delegation_tags[tag])
 
             graph.propertyAppend(item, "fillcolor", name_color(tag))
             graph.propertyAppend(item, "style", "filled")
         else:
-            item = graph.newItem(node.name)
+            item = graph.newItem("\n".join(item_text))
 
         label = graph.propertyGet(item, "label")
         if "cluster" in node.meta:

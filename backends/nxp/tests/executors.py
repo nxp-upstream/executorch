@@ -10,6 +10,7 @@ from typing import Dict, Union
 import numpy
 import numpy as np
 import torch
+from torch.fx.graph import Graph
 from torch.export import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
@@ -264,6 +265,10 @@ def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, a
                                               " number of outputs. Testing is not implemented for this case.")
 
     return tflite_executor, edge_program_executor
+
+
+def graph_contains_op(graph: Graph, op: object) -> bool:
+        return any(map(lambda node: node.target == op, graph.nodes))
 
 
 class OverrideSupportedTargets:

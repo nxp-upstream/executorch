@@ -12,7 +12,7 @@ from torch.export import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import convert_run_compare, ToChannelLastPreprocess, \
+from executorch.backends.nxp.tests.executors import convert_run_compare, graph_contains_op, ToChannelLastPreprocess, \
     ToChannelFirstPreprocess
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -63,10 +63,6 @@ class KWSFinalBlock(torch.nn.Module):
         return self.block(x)
 
 
-def _has_clone_op(quantized_program: ExportedProgram):
-    return any(map(lambda node: node.target == exir_ops.edge.aten.clone.default, quantized_program.graph.nodes))
-
-
 @pytest.mark.parametrize('inplace_dropout', [False, True])
 @pytest.mark.parametrize('input_shape', [(1, 3, 128, 128), (1, 3, 256, 256)])
 def test_conv_dropout_quant(mocker, inplace_dropout: bool, input_shape: tuple[int]):
@@ -79,7 +75,7 @@ def test_conv_dropout_quant(mocker, inplace_dropout: bool, input_shape: tuple[in
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    assert not _has_clone_op(quantized_program)
+    assert not graph_contains_op(graph=quantized_program.graph, op=exir_ops.edge.aten.clone.default)
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)
     convert_run_compare(exported_program,
@@ -101,7 +97,7 @@ def test_clone_pool_view_copy_quant(mocker, inplace_dropout: bool, input_shape: 
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    assert not _has_clone_op(quantized_program)
+    assert not graph_contains_op(graph=quantized_program.graph, op=exir_ops.edge.aten.clone.default)
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)
     convert_run_compare(exported_program,

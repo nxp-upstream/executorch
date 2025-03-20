@@ -205,6 +205,15 @@ class PermutePattern(SharedSpecPattern):
         return [torch.ops.aten.permute.default]
 
 
+class AbsPattern(SharedSpecPattern):
+    """
+    Quantizer for Abs operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.abs.default]
+
+
 class MeanDimPattern(SharedSpecPattern):
     """
     Quantizer for Mean Dim operator.
@@ -312,6 +321,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),
                 CadenceAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),
+                CadenceAtenQuantizer(AbsPattern(), static_qconfig),
                 CadenceAtenQuantizer(MeanDimPattern(), static_qconfig),
                 CadenceAtenQuantizer(FlattenPattern(), static_qconfig),
                 CadenceAtenQuantizer(DropoutPattern(), static_qconfig),

@@ -192,7 +192,8 @@ supported_ops = {
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,
     exir_ops.edge.aten.mean.dim: MeanDimConverter,
     exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,
-    exir_ops.edge.aten.clone.default: CloneConverter
+    exir_ops.edge.aten.clone.default: CloneConverter,
+    exir_ops.edge.aten.abs.default: AbsConverter,
 }
 
 

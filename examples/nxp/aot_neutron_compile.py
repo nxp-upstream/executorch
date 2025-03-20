@@ -26,6 +26,7 @@ from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
 from executorch.examples.nxp.models.microspeech_lstm.microspeech_lstm import MicroSpeechLSTM
 from executorch.examples.nxp.models.mlperf_tiny import (AnomalyDetection, KeywordSpotting, ImageClassification,
                                                         VisualWakeWords)
+from executorch.examples.nxp.models.mobilenet_v2 import MobilenetV2
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util import export_to_edge, save_pte_program
 
@@ -92,6 +93,7 @@ models = {
     "image_classification": ImageClassification,
     "anomaly_detection": AnomalyDetection,
     "microspeech_lstm": MicroSpeechLSTM,
+    "mobilenetv2": MobilenetV2,
 }
 
 

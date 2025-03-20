@@ -1,20 +1,41 @@
 import random
+import warnings
 
 from gvgen import GvGen
 from torch.export import ExportedProgram
+from torch.fx import Graph, GraphModule
 
 
-def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="graph.dot", show_tags=True,
-                            show_arguments=True):
+def exported_program_to_dot(exported_program_or_graph: ExportedProgram | Graph | GraphModule,
+                            dot_file_name="graph.dot", show_tags=True, show_arguments=False):
+    warnings.warn("This function is now deprecated. Use program_or_graph_to_dot() instead.",
+                  DeprecationWarning)
+    program_or_graph_to_dot(exported_program_or_graph, dot_file_name=dot_file_name,
+                            show_tags=show_tags, show_arguments=show_arguments)
+
+
+def program_or_graph_to_dot(exported_program_or_graph: ExportedProgram | Graph | GraphModule,
+                            dot_file_name="graph.dot", show_tags=True, show_arguments=False):
     """
-    Generate dot file for tagged exported program.
+    Generate dot file for tagged exported program, fx.Graph or GraphModule.
 
-    :param exported_program: Exported program with optional meta values: 'delegation_tag' and 'cluster'.
+    :param exported_program_or_graph: Exported program, fx.Graph or GraphModule with optional node's meta
+        values: 'delegation_tag' and 'cluster'.
     :param dot_file_name: Produced .dot file name.
     :param show_tags: If True, nodes will be shown as a subcomponent of tag nodes.
     :param show_arguments: If True, node arguments will be shown in exported dot file.
     """
     graph = GvGen()
+
+    if isinstance(exported_program_or_graph, ExportedProgram):
+        fx_graph = exported_program_or_graph.graph
+    elif isinstance(exported_program_or_graph, Graph):
+        fx_graph = exported_program_or_graph
+    elif isinstance(exported_program_or_graph, GraphModule):
+        fx_graph = exported_program_or_graph.graph
+    else:
+        print(f"Unsupported type of visualized program: '{type(exported_program_or_graph)}'.")
+        exit(1)
 
     def name_color(string):  # pseudo-randomization function
         h = hash(string)  # hash string and int together
@@ -30,14 +51,14 @@ def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="gr
     delegation_tags = {}
 
     # Find tags (parent objects)
-    for node in exported_program.graph.nodes:
+    for node in fx_graph.nodes:
         if "delegation_tag" in node.meta and show_tags:
             tag = node.meta["delegation_tag"]
             if tag not in delegation_tags:
                 item = graph.newItem(tag)
                 delegation_tags[tag] = item
 
-    for node in exported_program.graph.nodes:
+    for node in fx_graph.nodes:
         item_text = [node.name]
 
         if show_arguments and len(node.args) > 0:
@@ -74,7 +95,7 @@ def exported_program_to_dot(exported_program: ExportedProgram, dot_file_name="gr
         graph_items[node.name] = item
 
     # Add connections between nodes
-    for node in exported_program.graph.nodes:
+    for node in fx_graph.nodes:
         for user in node.users:
             link = graph.newLink(graph_items[node.name], graph_items[user.name])
 

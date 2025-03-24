@@ -85,10 +85,10 @@ def program_or_graph_to_dot(exported_program_or_graph: ExportedProgram | Graph |
             graph.propertyAppend(item, "label", label + "\n QDQ Cluster: " + node.meta["cluster"])
 
         # Change shape of node for (de)quantize and rest of nodes
-        if any(q in label for q in ["_quantize_per_tensor_", "_quantize_per_channel_"]):
-            graph.propertyAppend(item, "shape", "invhouse")
-        elif any(dq in label for dq in ["_dequantize_per_tensor_", "_dequantize_per_channel_"]):
+        if any(dq in node.name for dq in ["dequantize_per_tensor_", "dequantize_per_channel_"]):
             graph.propertyAppend(item, "shape", "house")
+        elif any(q in node.name for q in ["quantize_per_tensor_", "quantize_per_channel_"]):
+            graph.propertyAppend(item, "shape", "invhouse")
         else:
             graph.propertyAppend(item, "shape", "box")
 

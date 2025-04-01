@@ -22,15 +22,15 @@ class Relu6ConvBlock(torch.nn.Module):
     def __init__(self, conv_in_channels: int = 3, inplace: bool = False):
         super().__init__()
         self.block = torch.nn.Sequential(
-          torch.nn.Conv2d(in_channels=conv_in_channels, out_channels=64, kernel_size=(4, 4)),
-          torch.nn.ReLU6(inplace=inplace)
+            torch.nn.Conv2d(in_channels=conv_in_channels, out_channels=64, kernel_size=(4, 4)),
+            torch.nn.ReLU6(inplace=inplace)
         )
 
     def forward(self, x):
         return self.block(x)
 
 
-class CustomHardTanhBlock(torch.nn.Module):
+class ConvHardTanhBlock(torch.nn.Module):
     def __init__(self,
                  conv_in_channels: int = 3,
                  min_act_val: float = -1.,
@@ -70,12 +70,14 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
                         atol=1.)
 
 
-@pytest.mark.parametrize('input_shape', [(1, 3, 128, 128), (1, 3, 256, 256)])
+@pytest.mark.parametrize('input_shape', [(1, 3, 16, 16), (1, 3, 32, 32)])
 @pytest.mark.parametrize('activation_range', list(HardTanhConverter.supported_modes_map.keys()))
 @pytest.mark.parametrize('inplace', [True, False])
 def test_custom_hardtanh_quant(mocker, input_shape: tuple[int], activation_range: tuple[int, int], inplace: bool):
+    # TODO(Lukas): This test suffers from non-ideal testing random quantization, because we always use range <0,1>.
+    #  We should update this (decrease atol) when we have custom calibration dataset definition in place.
     min_val, max_val = activation_range
-    model = CustomHardTanhBlock(
+    model = ConvHardTanhBlock(
         conv_in_channels=input_shape[1],
         min_act_val=min_val,
         max_act_val=max_val,
@@ -98,4 +100,4 @@ def test_custom_hardtanh_quant(mocker, input_shape: tuple[int], activation_range
                         tflite_input_preprocess=ToChannelLastPreprocess(),
                         tflite_output_preprocess=ToChannelFirstPreprocess(),
                         input_data=input_data,
-                        atol=1.)
+                        atol=2.)

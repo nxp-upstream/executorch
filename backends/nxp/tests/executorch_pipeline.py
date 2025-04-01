@@ -28,6 +28,12 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
     return m
 
 
+def get_random_float_data(input_shapes: tuple[int] | list[tuple[int]]):
+    #TODO(Lukas): Replace with something more robust.
+    return (torch.randn(input_shapes),) if type(input_shapes) is tuple \
+        else tuple(torch.randn(input_shape) for input_shape in input_shapes)
+
+
 def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]],
                               operators_not_to_delegate: list[str] = None, target="imxrt700",
                               neutron_converter_flavor="wrapper", remove_quant_io_ops=False)\
@@ -36,9 +42,7 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] |
         assert all([isinstance(input_shape, tuple) for input_shape in input_shapes]), ("For multiple inputs, provide"
                                                                                        " list[tuple[int]].")
 
-    random_tensors  = (torch.randn(input_shapes),) if type(input_shapes) is tuple \
-        else tuple(torch.randn(input_shape) for input_shape in input_shapes)
-    calibration_inputs = [random_tensors, random_tensors]
+    calibration_inputs = [get_random_float_data(input_shapes) for _ in range(4)]
     example_input = (torch.ones(input_shapes),) if type(input_shapes) is tuple \
         else tuple(torch.ones(input_shape) for input_shape in input_shapes)
 

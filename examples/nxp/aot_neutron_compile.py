@@ -23,6 +23,7 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.nxp.cifar_net.cifar_net import CifarNet
 from executorch.examples.nxp.cifar_net.cifar_net import test_cifarnet_model
+from executorch.examples.nxp.models.microspeech_lstm.microspeech_lstm import MicroSpeechLSTM
 from executorch.examples.nxp.models.mlperf_tiny import (AnomalyDetection, KeywordSpotting, ImageClassification,
                                                         VisualWakeWords)
 from executorch.exir import ExecutorchBackendConfig
@@ -90,6 +91,7 @@ models = {
     "keyword_spotting": KeywordSpotting,
     "image_classification": ImageClassification,
     "anomaly_detection": AnomalyDetection,
+    "microspeech_lstm": MicroSpeechLSTM,
 }
 
 

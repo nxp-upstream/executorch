@@ -267,8 +267,8 @@ def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, a
     return tflite_executor, edge_program_executor
 
 
-def graph_contains_op(graph: Graph, op: object) -> bool:
-        return any(map(lambda node: node.target == op, graph.nodes))
+def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
+        return any(map(lambda node: node.target in ops, graph.nodes))
 
 
 class OverrideSupportedTargets:

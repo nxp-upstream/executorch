@@ -5,7 +5,7 @@ from torch.export import ExportedProgram
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
-from executorch.backends.nxp.tests.executors import convert_run_compare, graph_contains_op, ToChannelLastPreprocess, \
+from executorch.backends.nxp.tests.executors import convert_run_compare, graph_contains_any_of_ops, ToChannelLastPreprocess, \
     ToChannelFirstPreprocess
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -51,7 +51,7 @@ def test_conv_abs(mocker, input_shape: tuple[int] = (1, 3, 112, 112)):
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    assert not graph_contains_op(graph=quantized_program.graph, op=exir_ops.edge.aten.abs.default)
+    assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.abs.default])
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)
     convert_run_compare(exported_program,
@@ -72,7 +72,7 @@ def test_abs_only(mocker, input_shape: tuple[int] = (1, 10)):
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    assert not graph_contains_op(graph=quantized_program.graph, op=exir_ops.edge.aten.abs.default)
+    assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.abs.default])
 
     input_data = (np.random.random(input_shape) * 50).astype(np.int8)
     convert_run_compare(exported_program,

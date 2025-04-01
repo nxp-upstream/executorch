@@ -169,6 +169,26 @@ class ReluInPlacePattern(SharedSpecPattern):
         return [torch.ops.aten.relu_.default]
 
 
+class HardTanhPattern(SharedSpecPattern):
+    """
+    Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
+    computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh.default]
+
+
+class HardTanhInPlacePattern(SharedSpecPattern):
+    """
+    Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
+    functions usually follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh_.default]
+
+
 class ReshapePattern(SharedSpecPattern):
     """
     Quantizer for Reshape operator.
@@ -317,6 +337,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(PermutePattern(), static_qconfig),
                 CadenceAtenQuantizer(PadPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(HardTanhPattern(), static_qconfig),
+                CadenceAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),

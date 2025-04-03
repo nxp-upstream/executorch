@@ -176,16 +176,16 @@ class NeutronBackend final : public PyTorchBackendInterface {
     //    cfg->mcfg.microcode
     //    cfg->mcfg.weights
     //    cfg->mcfg.kernels
-    const uint8_t* transpositionFlags = static_cast<const uint8_t*>(processed->data());
-    uint32_t numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
-    uint32_t numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
-    cfg->numInputArgs = transpositionFlags[INPUT_ARGS_LEN_POS];
-    cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
-    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
-    cfg->inputMap = INPUT_TENSOR_MAP_ARRAY_ADDR(transpositionFlags);
-    cfg->outputMap = OUTPUT_TENSOR_MAP_ARRAY_ADDR(transpositionFlags);
+    const uint8_t* payloadFlags = static_cast<const uint8_t*>(processed->data());
+    uint32_t numInputs = payloadFlags[INPUT_TENSOR_FORMAT_LEN_POS];
+    uint32_t numOutputs = payloadFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
+    cfg->numInputArgs = payloadFlags[INPUT_ARGS_LEN_POS];
+    cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(payloadFlags);
+    cfg->outputTranspositionFlags = OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(payloadFlags);
+    cfg->inputMap = INPUT_TENSOR_MAP_ARRAY_ADDR(payloadFlags);
+    cfg->outputMap = OUTPUT_TENSOR_MAP_ARRAY_ADDR(payloadFlags);
 
-    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(transpositionFlags));
+    const uint32_t* buffer = static_cast<const uint32_t*>(static_cast<const void*>PAYLOAD_ADDR(payloadFlags));
     uint32_t magicWord = buffer[0];
     // Check valid microcode.
     if (magicWord != 0x64434D6E) {

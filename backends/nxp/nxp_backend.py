@@ -248,7 +248,7 @@ class PayloadComposer:
             try:
                 header_data.append(1 if outputs[output_name.decode()] == TensorFormat.CHANNELS_LAST else 0)
             except KeyError:
-                assert 0, f'Output tensor `{output_name.decode()}` not found in the converted model.'
+                raise AssertionError(f'Output tensor `{output_name.decode()}` not found in the converted model.')
 
         header_data.extend(neutron_artifacts.input_indices)
         header_data.extend(neutron_artifacts.output_indices)

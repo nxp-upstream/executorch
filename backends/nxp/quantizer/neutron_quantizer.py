@@ -169,6 +169,56 @@ class ReluInPlacePattern(SharedSpecPattern):
         return [torch.ops.aten.relu_.default]
 
 
+class HardTanhPattern(QuantizationPattern):
+    """
+    Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
+    computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh.default]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        assert False
+
+
+class HardTanhInPlacePattern(QuantizationPattern):
+    """
+    Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
+    functions usually follows computation layer.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.hardtanh_.default]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, 0)],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+    def replacement_op(self):
+        assert False
+
+
 class ReshapePattern(SharedSpecPattern):
     """
     Quantizer for Reshape operator.
@@ -317,6 +367,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(PermutePattern(), static_qconfig),
                 CadenceAtenQuantizer(PadPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(HardTanhPattern(), static_qconfig),
+                CadenceAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),

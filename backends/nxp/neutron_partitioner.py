@@ -187,6 +187,7 @@ supported_ops = {
     exir_ops.edge.aten.max_pool2d_with_indices.default: MaxPool2dConverter,
     exir_ops.edge.aten.mm.default: MMConverter,
     exir_ops.edge.aten.relu.default: ReLUConverter,
+    exir_ops.edge.aten.hardtanh.default: HardTanhConverter,
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,

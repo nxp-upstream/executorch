@@ -102,7 +102,7 @@ def program_or_graph_to_dot(exported_program_or_graph: ExportedProgram | Graph |
             label = ""
             if "val" in node.meta:
                 tensor = node.meta["val"]
-                if isinstance(tensor, tuple):
+                if isinstance(tensor, tuple) or isinstance(tensor, list):
                     tensor = tensor[0]  # Fake tensor
                 label = f"  ({list(tensor.shape)} | {tensor.dtype})"
 

@@ -30,9 +30,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     CloneConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.abs_converter import \
     AbsConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.hardtanh_converter import \
+    HardTanhConverter
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
     "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter", "MeanDimConverter", "AdaptiveAvgPool2dConverter",
-    "CloneConverter", "AbsConverter"
+    "CloneConverter", "AbsConverter", "HardTanhConverter"
 ]

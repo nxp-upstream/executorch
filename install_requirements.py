@@ -138,7 +138,7 @@ EXAMPLES_REQUIREMENTS = [
 
 # pip packages needed for development.
 DEVEL_REQUIREMENTS = [
-    "cmake",  # For building binary targets.
+    "cmake>=3.19, <4.0.0",  # For building binary targets.
     "pip>=23",  # For building the pip package.
     "pyyaml",  # Imported by the kernel codegen tools.
     "setuptools>=63",  # For building the pip package.

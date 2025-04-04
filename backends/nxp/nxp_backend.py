@@ -242,7 +242,7 @@ class PayloadComposer:
             try:
                 header_data.append(1 if inputs[input_name.decode()] == TensorFormat.CHANNELS_LAST else 0)
             except KeyError:
-                assert 0, f'Input tensor `{input_name.decode()}` not found in the converted model.'
+                raise AssertionError(f'Input tensor `{input_name.decode()}` not found in the converted model.')
 
         for output_name in neutron_artifacts.output_names:
             try:

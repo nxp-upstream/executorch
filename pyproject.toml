@@ -92,6 +92,7 @@ flatc = "executorch.data.bin:flatc"
   "*.fbs",
   # Some kernel libraries need their .yaml files.
   "*.yaml",
+  "cifar_net.pth",
 ]
 
 [tool.setuptools.exclude-package-data]

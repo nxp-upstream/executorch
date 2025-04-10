@@ -9,12 +9,13 @@ from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
 from executorch import exir
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import RemoveIOQuantOpsPass
+from executorch.backends.nxp.edge_passes.nxp_edge_pass_manager import NXPEdgePassManager
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.pytorch_passes.nxp_pytorch_pass_manager import NXPPyTorchPassManager
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
-from executorch.extension.export_util.utils import export_to_edge
 from executorch.exir import EdgeProgramManager, ExecutorchBackendConfig, ExecutorchProgramManager
+from executorch.extension.export_util.utils import export_to_edge
 
 
 def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
@@ -29,15 +30,15 @@ def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor]]):
 
 
 def get_random_float_data(input_shapes: tuple[int] | list[tuple[int]]):
-    #TODO(Lukas): Replace with something more robust.
+    # TODO(Lukas): Replace with something more robust.
     return (torch.randn(input_shapes),) if type(input_shapes) is tuple \
         else tuple(torch.randn(input_shape) for input_shape in input_shapes)
 
 
 def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]],
                               operators_not_to_delegate: list[str] = None, target="imxrt700",
-                              neutron_converter_flavor="wrapper", remove_quant_io_ops=False)\
-        -> EdgeProgramManager:
+                              neutron_converter_flavor="wrapper", remove_quant_io_ops=False
+                              ) -> EdgeProgramManager:
     if isinstance(input_shapes, list):
         assert all([isinstance(input_shape, tuple) for input_shape in input_shapes]), ("For multiple inputs, provide"
                                                                                        " list[tuple[int]].")
@@ -49,11 +50,13 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] |
     exir_program_aten = torch._export.capture_pre_autograd_graph(model, example_input)
 
     # Run pre-processing passes of the float32 aten dialect program.
-    pass_manager = NXPPyTorchPassManager(exir_program_aten)
-    pass_manager.run()  # All passes by default.
+    pytorch_pass_manager = NXPPyTorchPassManager(exir_program_aten)
+    pytorch_pass_manager.run()  # All passes by default.
 
     exir_program_aten_quant = _quantize_model(exir_program_aten, calibration_inputs)
     edge_program_manager = export_to_edge(exir_program_aten_quant, example_input)
+
+    edge_program_manager = NXPEdgePassManager(edge_program_manager).transform()
 
     if remove_quant_io_ops:
         edge_program_manager = edge_program_manager.transform(
@@ -68,8 +71,8 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int] |
     return edge_program_manager
 
 
-def to_quantized_executorch_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]]) \
-        -> ExecutorchProgramManager:
+def to_quantized_executorch_program(model: torch.nn.Module, input_shapes: tuple[int] | list[tuple[int]]
+                                    ) -> ExecutorchProgramManager:
     edge_program_manager = to_quantized_edge_program(model, input_shapes)
 
     return edge_program_manager.to_executorch(

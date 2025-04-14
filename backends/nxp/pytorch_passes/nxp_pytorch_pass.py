@@ -10,7 +10,7 @@ from torch.nn.parameter import Parameter
 
 
 class NXPPyTorchPass(ABC):
-    """ Abstract parent class for pre-processing passes on the PyTorch module level. """
+    """ Abstract parent class for pre-processing passes on the aten dialect level. """
 
     def __init__(self, module: GraphModule) -> None:
         super().__init__()

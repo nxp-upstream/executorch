@@ -23,6 +23,8 @@ class NXPEdgePassManager:
 
         self.passes = passes or [
             # Run all NXP edge passes by default.
+            MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass,
+            MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass
         ]
 
     def transform(self) -> EdgeProgramManager:

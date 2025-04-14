@@ -6,7 +6,6 @@
 import logging
 from typing import Iterable
 
-import itertools
 from torch.fx import GraphModule
 
 from executorch.backends.nxp.pytorch_passes.fuse_batch_norm_with_conv_pass import FuseBatchNormWithConvPass
@@ -31,29 +30,24 @@ class NXPPyTorchPassManager:
     def run(self) -> GraphModule:
         """ Iteratively apply all available passes for as long as they are changing the graph. """
         graph_module = self.module
-        num_passes = len(self.passes)
-        hard_limit = 10 * num_passes  # Empirical value.
-        num_passes_since_last_change = 0
+        hard_limit = 10  # Empirical value.
+        overall_made_changes = False
 
         self._clean_up_graph_module()
 
-        # Cycle through all passes as long as they are making changes.
-        for i, pass_class in enumerate(itertools.cycle(self.passes)):
-            try:
-                pass_ = pass_class(graph_module)
-                made_changes = pass_.run()
-                self._clean_up_graph_module()
+        for _ in range(hard_limit):
+            for pass_class in self.passes:
+                try:
+                    pass_ = pass_class(graph_module)
+                    made_changes = pass_.run()
+                    overall_made_changes = overall_made_changes or made_changes
+                    self._clean_up_graph_module()
 
-                if made_changes:
-                    num_passes_since_last_change = 0
-                else:
-                    num_passes_since_last_change += 1
+                except Exception as e:
+                    logging.warning(f'An exception occurred during the pre-processing pass `{pass_class}`. '
+                                    'Please report this issue.\n' + str(e))
 
-                if num_passes_since_last_change >= num_passes or i >= hard_limit:
-                    break
-
-            except Exception as e:
-                logging.warning(f'An exception occurred during the pre-processing pass `{pass_class}`. '
-                                'Please report this issue.\n' + str(e))
+            if not overall_made_changes:
+                break
 
         return graph_module

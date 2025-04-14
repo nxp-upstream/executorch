@@ -25,6 +25,11 @@ class ConstantPadNDConverter(NodeConverter):
     def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
         match target:
             case Target.RT700:
+                paddings = node.args[1]
+                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                    # Attempt to Pad channels dimension, which is not supported on Neutron.
+                    return False
+
                 return True
 
             case _:
@@ -43,10 +48,6 @@ class ConstantPadNDConverter(NodeConverter):
             return False
 
         if not NodeConverter._has_shared_q_params_if_quantized(node):
-            return False
-
-        if len(paddings) > 4 and paddings[4:6] != [0, 0]:
-            # Attempt to Pad channels dimension -> currently not supported
             return False
 
         return True

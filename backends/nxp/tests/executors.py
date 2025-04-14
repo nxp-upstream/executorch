@@ -4,19 +4,21 @@
 # LICENSE file in the root directory of this source tree.
 
 import warnings
-from typing import Dict, Union
+from typing import Dict, Union, Callable
 
 import numpy
 import numpy as np
 import torch
-from torch.fx.graph import Graph
 from torch.export import ExportedProgram
+from torch.fx import Node
+from torch.fx.graph import Graph
 
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import \
     create_channels_first_to_channels_last_permutation, create_channels_last_to_channels_first_permutation
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -25,13 +27,14 @@ try:
 except ModuleNotFoundError:
     import tflite_runtime.interpreter as tflite
 
+
 class EdgeProgramExecutor:
 
     def __init__(self, edge_program: ExportedProgram):
         self.edge_program = edge_program
 
-    def inference(self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]) \
-            -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
+    def inference(self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]
+                  ) -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
 
         if isinstance(input_data, numpy.ndarray):
             program_inputs = [torch.from_numpy(input_data)]
@@ -50,7 +53,6 @@ class EdgeProgramExecutor:
             return {name: tensor.detach().numpy() for (name, tensor) in zip(output_names, output)}
 
         raise RuntimeError("Edge program inference with multiple outputs not implemented")
-
 
 
 class TFLiteExecutor:
@@ -100,8 +102,8 @@ class TFLiteExecutor:
 
         self._interpreter.allocate_tensors()
 
-    def inference(self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]) \
-            -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
+    def inference(self, input_data: Union[numpy.ndarray, Dict[int, numpy.ndarray]]
+                  ) -> Union[numpy.ndarray, Dict[str, numpy.ndarray]]:
         input_details = self._interpreter.get_input_details()
         output_details = self._interpreter.get_output_details()
 
@@ -216,6 +218,7 @@ class ToNHWCPreprocess(TFLiteIOPreprocess):
             preprocessed_data = {k: transpose_fn(v) for k, v in data.items()}
         return preprocessed_data
 
+
 class ToNCHWPreprocess(TFLiteIOPreprocess):
 
     def preprocess(self, data: np.ndarray | dict[int, numpy.ndarray]):
@@ -229,15 +232,14 @@ class ToNCHWPreprocess(TFLiteIOPreprocess):
         return preprocessed_data
 
 
-
 def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, atol=1.e-8,
                         save_models=False,
                         tfl_model: (bytes, dict) = None,
                         tflite_input_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
                         tflite_output_preprocess: TFLiteIOPreprocess = TFLiteIOPreprocess(),
                         conversion_config: ConversionConfig = ConversionConfig(),
-                        tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO) -> (TFLiteExecutor, EdgeProgramExecutor):
-
+                        tflite_op_resolver_type=tflite.experimental.OpResolverType.AUTO
+                        ) -> (TFLiteExecutor, EdgeProgramExecutor):
     if tfl_model is None:
         tfl_model, _ = EdgeProgramToIRConverter().convert_program(edge_program, conversion_config)
 
@@ -271,19 +273,22 @@ def convert_run_compare(edge_program: ExportedProgram, input_data, rtol=1.e-5, a
 
 
 def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
-        return any(map(lambda node: node.target in ops, graph.nodes))
+    return any(map(lambda node: node.target in ops, graph.nodes))
 
 
-class OverrideSupportedTargets:
+target_support_check_function = Callable[[Node, Target], bool]
 
-    def __init__(self, converter_class, *, new_targets):
+
+class OverrideTargetSupportCheck:
+
+    def __init__(self, converter_class: type[NodeConverter], *,
+                 new_target_support_check: target_support_check_function):
         self._converter_class = converter_class
-        self._new_targets = new_targets
-
-        self._old_targets = self._converter_class.supported_targets
+        self.new_target_support_check = new_target_support_check
+        self.old_target_support_check = converter_class._is_supported_on_target
 
     def __enter__(self):
-        self._converter_class.supported_targets = self._new_targets
+        self._converter_class._is_supported_on_target = self.new_target_support_check
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._converter_class.supported_targets = self._old_targets
+        self._converter_class._is_supported_on_target = self.old_target_support_check

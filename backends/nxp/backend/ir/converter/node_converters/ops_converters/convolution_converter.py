@@ -25,7 +25,14 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 
 class ConvolutionConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+    @staticmethod
+    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+        match target:
+            case Target.RT700:
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
@@ -63,10 +70,6 @@ class ConvolutionConverter(NodeConverter):
             weight_tensor = input_tensor(node, 1)
             if weight_tensor.dtype not in [torch.float32, torch.int8, torch.uint8]:
                 return False
-
-        if node.args[0].meta['val'].shape[0] != 1:
-            # Only batch size 1 is supported on neutron.
-            return False
 
         return True
 

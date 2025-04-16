@@ -281,7 +281,7 @@ class NeutronPartitioner(Partitioner):
         target = self.delegation_spec[1][2].value
         target = Target(target.decode())
 
-        operators_not_to_delegate = self.delegation_spec[1][3].value.decode().split(',')
+        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(',')
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(exported_program)

@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+
 import numpy as np
 import pytest
 import torch
@@ -12,8 +13,8 @@ from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramTo
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import ModelBuilder
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program, to_edge_program
-from executorch.backends.nxp.tests.executors import convert_run_compare, ToNCHWPreprocess, ToNHWCPreprocess
-from executorch.backends.nxp.tests.models import Conv2dModule
+from executorch.backends.nxp.tests.executors import convert_run_compare, ToChannelFirstPreprocess, ToChannelLastPreprocess
+from executorch.backends.nxp.tests.models import Conv2dModule, Conv1dModule
 
 
 @pytest.fixture(autouse=True)
@@ -22,26 +23,252 @@ def reseed_model_per_test_run():
     np.random.seed(23)
 
 
-@pytest.mark.parametrize("input_shape, padding", [
-    pytest.param((1, 4, 32, 32), (0, 0), id="No padding."),
-    pytest.param((1, 4, 32, 32), (1, 1), id="Padding, keep the same output tensor size as input."),
-    pytest.param((1, 4, 32, 32), (1, 0), id="Padding, change the output tensor size."),
-    pytest.param((1, 4, 31, 31), (1, 0), id="Padding, change the output tensor size."),
-    pytest.param((1, 4, 31, 31), (0, 1), id="Padding, change the output tensor size."),
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+def test_conv1d_quant_conversion(stride, dilation, kernel_size, mocker):
+    input_shape = (1, 4, 16)
+    model = Conv1dModule(stride=stride, dilation=dilation, kernel_size=kernel_size)
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    _ = to_quantized_edge_program(model, input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(exported_program, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tfl_model=tflite_flatbuffers_model,
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), input_data=input_data, atol=1.)
+
+    # Capture IR model ops
+    conversion_result = ops_spy.spy_return
+    ops = conversion_result.sub_graphs[0].operators.vector
+
+    assert len(ops) == 3
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[2].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+@pytest.mark.parametrize("padding", [(1,), 2])
+def test_conv1d_quant_conversion__padded(stride, dilation, kernel_size, padding, mocker):
+    input_shape = (1, 4, 16)
+    model = Conv1dModule(stride=stride, dilation=dilation, kernel_size=kernel_size, padding=padding)
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    _ = to_quantized_edge_program(model, input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(exported_program, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tfl_model=tflite_flatbuffers_model,
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), input_data=input_data, atol=1.)
+
+    # Capture IR model ops
+    conversion_result = ops_spy.spy_return
+    ops = conversion_result.sub_graphs[0].operators.vector
+
+    assert len(ops) == 4
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.PAD
+    assert ops[2].builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[3].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+def test_conv1d_quant_conversion__depthwise(stride, dilation, kernel_size, mocker):
+    input_shape = (1, 4, 16)
+    group = input_shape[1]
+    model = Conv1dModule(group=group, in_channels=group, out_channels=group, stride=stride, dilation=dilation,
+                         kernel_size=kernel_size)
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    _ = to_quantized_edge_program(model, input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(exported_program, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tfl_model=tflite_flatbuffers_model,
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), input_data=input_data, atol=1.)
+
+    # Capture IR model ops
+    ops = ops_spy.spy_return.sub_graphs[0].operators.vector
+
+    assert len(ops) == 3
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+    assert ops[2].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+@pytest.mark.parametrize("padding", [(1,), 2])
+def test_conv1d_quant_conversion__depthwise__padded(stride, dilation, kernel_size, padding, mocker):
+    input_shape = (1, 4, 16)
+    group = input_shape[1]
+    model = Conv1dModule(group=group, in_channels=group, out_channels=group, stride=stride, dilation=dilation,
+                         kernel_size=kernel_size, padding=padding)
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    _ = to_quantized_edge_program(model, input_shape)
+
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+
+    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    convert_run_compare(exported_program, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tfl_model=tflite_flatbuffers_model,
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), input_data=input_data, atol=1.)
+
+    # Capture IR model ops
+    ops = ops_spy.spy_return.sub_graphs[0].operators.vector
+
+    assert len(ops) == 4
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.PAD
+    assert ops[2].builtin_options.operator_type == BuiltinOperator.DEPTHWISE_CONV_2D
+    assert ops[3].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(3,), 4])
+@pytest.mark.parametrize("input_shape, group, out_channels", [
+    ((1, 4, 12), 2, 2),
+    ((1, 16, 9), 4, 16)
 ])
-@pytest.mark.parametrize("dilation", [
-    pytest.param(1, id="No dilation."),
-    pytest.param(2, id="2 dilation."),
-    pytest.param((1, 3), id="Side-different dilation."),
-])
-def test_conv2d_conversion(input_shape, padding, dilation: int):
-    edge_program = to_edge_program(Conv2dModule(padding=padding, dilation=dilation), input_shape).exported_program()
+def test_conv1d_conversion__separated(input_shape, group, out_channels, stride, dilation, kernel_size, mocker):
+    model = Conv1dModule(group=group, in_channels=input_shape[1], out_channels=out_channels, stride=stride,
+                         dilation=dilation, kernel_size=kernel_size)
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    edge_program = to_edge_program(model, input_shape).exported_program()
 
     input_data = np.random.random(input_shape).astype(np.float32)
 
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=4e-7)
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=3.e-7)
 
+    # Capture IR model ops
+    ops = ops_spy.spy_return.sub_graphs[0].operators.vector
+
+    assert len(ops) == 1 + 1 + group + 1 + 1  # Reshape + Split -> Conv (group times) -> Concat + Reshape
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.SPLIT
+    for op in ops[3:-2]:
+        assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[-2].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+    assert ops[-1].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(3,), 4])
+@pytest.mark.parametrize("padding", [2, (1,)])
+@pytest.mark.parametrize("input_shape, group, out_channels", [
+    ((1, 4, 12), 2, 2),
+    ((1, 16, 9), 4, 16)
+])
+def test_conv1d_conversion__separated__padded(input_shape, group, out_channels, stride, dilation, kernel_size,
+                                              padding, mocker):
+    model = Conv1dModule(group=group, in_channels=input_shape[1], out_channels=out_channels, stride=stride,
+                         dilation=dilation, kernel_size=kernel_size, padding=padding)
+    ops_spy = mocker.spy(ModelBuilder, 'finish')
+
+    # Run conversion
+    edge_program = to_edge_program(model, input_shape).exported_program()
+
+    input_data = np.random.random(input_shape).astype(np.float32)
+
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=3.e-7)
+
+    # Capture IR model ops
+    ops = ops_spy.spy_return.sub_graphs[0].operators.vector
+
+    assert len(ops) == 1 + 1 + 2 * group + 1 + 1  # Reshape + Split -> Pad + Conv (group times) -> Concat + Reshape
+    assert ops[0].builtin_options.operator_type == BuiltinOperator.RESHAPE
+    assert ops[1].builtin_options.operator_type == BuiltinOperator.SPLIT
+    for op in ops[2:-3:2]:
+        assert op.builtin_options.operator_type == BuiltinOperator.PAD
+    for op in ops[3:-2:2]:
+        assert op.builtin_options.operator_type == BuiltinOperator.CONV_2D
+    assert ops[-2].builtin_options.operator_type == BuiltinOperator.CONCATENATION
+    assert ops[-1].builtin_options.operator_type == BuiltinOperator.RESHAPE
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+@pytest.mark.parametrize("input_shape, group, out_channels", [
+    ((1, 4, 12), 2, 2),
+    ((1, 16, 9), 4, 16)
+])
+def test_conv1d_quant_conversion__separated(input_shape, group, out_channels, stride, dilation, kernel_size):
+    model = Conv1dModule(group=group, in_channels=input_shape[1], out_channels=out_channels, stride=stride,
+                         dilation=dilation, kernel_size=kernel_size)
+
+    # Run conversion
+    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    nodes = list(edge_program.graph.nodes)
+    assert len(nodes) == 11
+    assert nodes[7].target.__name__ == 'aten.convolution.default'  # Convolution not delegated.
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("dilation", [2, 1])
+@pytest.mark.parametrize("kernel_size", [(1,), (3,)])
+@pytest.mark.parametrize("padding", [(1,), 2])
+@pytest.mark.parametrize("input_shape, group, out_channels", [
+    ((1, 4, 12), 2, 2),
+    ((1, 16, 9), 4, 16)
+])
+def test_conv1d_quant_conversion__separated__padded(input_shape, group, out_channels, stride, dilation, kernel_size,
+                                                    padding):
+    model = Conv1dModule(group=group, in_channels=input_shape[1], out_channels=out_channels, stride=stride,
+                         dilation=dilation, kernel_size=kernel_size, padding=padding)
+
+    # Run conversion
+    edge_program = to_quantized_edge_program(model, input_shape).exported_program()
+
+    nodes = list(edge_program.graph.nodes)
+    assert len(nodes) == 11
+    assert nodes[7].target.__name__ == 'aten.convolution.default'  # Convolution not delegated.
 
 @pytest.mark.parametrize("model, input_shape", [
     pytest.param(Conv2dModule(in_channels=8, out_channels=32, kernel_size=5),
@@ -87,9 +314,9 @@ def test_conv2d_quant_conversion(mocker, model: torch.nn.Module, input_shape):
 
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
-    convert_run_compare(exported_program, tflite_input_preprocess=ToNHWCPreprocess(),
+    convert_run_compare(exported_program, tflite_input_preprocess=ToChannelLastPreprocess(),
                         tfl_model=tflite_flatbuffers_model,
-                        tflite_output_preprocess=ToNCHWPreprocess(), input_data=input_data, atol=1.)
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), input_data=input_data, atol=1.)
 
 
 @pytest.mark.parametrize("stride", [1, 2])
@@ -108,8 +335,8 @@ def test_conv2d_conversion__depthwise(stride, dilation, kernel_shape, mocker):
 
     spy = mocker.spy(ModelBuilder, 'finish')
 
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=4e-7)
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=4e-7)
     conversion_result = spy.spy_return
     ops = conversion_result.sub_graphs[0].operators.vector
 
@@ -153,8 +380,8 @@ def test_conv2d_conversion__depthwise__padded(padding, mocker):
 
     spy = mocker.spy(ModelBuilder, 'finish')
 
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=4e-7)
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=4e-7)
     conversion_result = spy.spy_return
     ops = conversion_result.sub_graphs[0].operators.vector
 
@@ -201,8 +428,8 @@ def test_conv2d_conversion__separated(input_shape, group, out_channels, stride, 
     input_data = np.random.random(input_shape).astype(np.float32)
 
     spy = mocker.spy(ModelBuilder, 'finish')
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=3.e-7)
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=3.e-7)
 
     ops = spy.spy_return.sub_graphs[0].operators.vector
     assert len(ops) == 1 + group + 1  # Split -> Conv (group times) -> Concat
@@ -256,8 +483,8 @@ def test_conv2d_conversion__separated__padded(input_shape, group, out_channels, 
 
     spy = mocker.spy(ModelBuilder, 'finish')
 
-    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToNHWCPreprocess(),
-                        tflite_output_preprocess=ToNCHWPreprocess(), atol=3.e-7)
+    convert_run_compare(edge_program, input_data, tflite_input_preprocess=ToChannelLastPreprocess(),
+                        tflite_output_preprocess=ToChannelFirstPreprocess(), atol=3.e-7)
 
     conversion_result = spy.spy_return
     ops = conversion_result.sub_graphs[0].operators.vector

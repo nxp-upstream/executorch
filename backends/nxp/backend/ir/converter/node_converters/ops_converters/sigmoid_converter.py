@@ -1,7 +1,9 @@
-# Copyright 2024-2025 NXP
+# Copyright 2025 NXP
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 
 from torch.fx import Node
 from torch.nn import Parameter
@@ -10,7 +12,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConv
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
 
 
-class ReLUConverter(NodeConverter):
+class SigmoidConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
         match target:
@@ -28,6 +30,7 @@ class ReLUConverter(NodeConverter):
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
-        t_op.opcode_index = self.builder.op_code_index_for_op_type(BuiltinOperator.RELU)
+        t_op.opcode_index = self.builder.op_code_index_for_op_type(BuiltinOperator.LOGISTIC)
 
         self.builder.append_operators([t_op])
+

@@ -40,7 +40,8 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
     sub_graph = model.Subgraphs(0)
 
     if sub_graph.OperatorsLength() == 0:
-        raise RuntimeError(f'Model converted with neutron-converter has `0` operators instead of `1`.')
+        raise RuntimeError(f'Model converted with neutron-converter has `0` operators instead of `1`.',
+                           sub_graph.OperatorsLength())
     elif sub_graph.OperatorsLength() > 1:
         builtin_operators_map: dict[int, str] = {y: x for x, y in BuiltinOperator.__dict__.items()}
 
@@ -49,7 +50,7 @@ def extract_artifacts_from_neutron_node(tflite_flatbuffer_or_path: bytes | str) 
         ops_found = [builtin_operators_map[opcodes[node.OpcodeIndex()].BuiltinCode()] for node in nodes]
 
         raise RuntimeError(f'Model converted with neutron-converter has `{sub_graph.OperatorsLength()}` operators '
-                           f'instead of `1`. Operators found: {", ".join(ops_found)}.')
+                           f'instead of `1`. Operators found: {", ".join(ops_found)}.', sub_graph.OperatorsLength())
 
     neutron_node = None
     opcodes = [model.OperatorCodes(i) for i in range(model.OperatorCodesLength())]

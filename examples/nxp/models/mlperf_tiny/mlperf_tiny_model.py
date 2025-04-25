@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from executorch.examples.models import model_base
-from executorch.examples.nxp.models.mlperf_tiny.calibration_dataset import CalibrationDataset
+from executorch.examples.nxp.models.calibration_dataset import CalibrationDataset
 from executorch.examples.nxp.models.model_manager import ModelManager
 
 

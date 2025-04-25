@@ -16,7 +16,7 @@ class CalibrationDataset(Dataset):
             with lzma.open(data_path) as f:
                 self.examples = pickle.load(f)
         elif data_path.endswith('.pt'):
-            self.examples = torch.load(data_path, weights_only=False)
+            self.examples = torch.load(data_path, map_location=torch.device('cpu'))
         else:
             raise ValueError('Invalid file format, supported formats are .xz, .pt.')
 

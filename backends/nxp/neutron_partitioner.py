@@ -195,6 +195,7 @@ supported_ops = {
     exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,
     exir_ops.edge.aten.clone.default: CloneConverter,
     exir_ops.edge.aten.abs.default: AbsConverter,
+    exir_ops.edge.aten.cat.default: CatConverter,
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,
 }
 

@@ -72,6 +72,12 @@ def test_cat__same_shapes(dim, num_inputs, rank, mocker):
     assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
     assert any('lowered_module' in node.name for node in quantized_program.graph.nodes)
 
+    # NO-UPSTREAM: Make sure the converted variant produces the same input as the original.
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {i: (np.random.random(input_shape) * 50).astype(np.int8) for i in range(num_inputs)}
+    convert_run_compare(exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data, atol=1)
+
 
 @pytest.mark.parametrize("dim", [
     3, -2, -3
@@ -92,6 +98,12 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
     # Make sure the `Cat` was delegated.
     assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
     assert any('lowered_module' in node.name for node in quantized_program.graph.nodes)
+
+    # NO-UPSTREAM: Make sure the converted variant produces the same input as the original.
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {i: (np.random.random(input_shape) * 50).astype(np.int8) for i in range(num_inputs)}
+    convert_run_compare(exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data, atol=1)
 
 
 @pytest.mark.parametrize("dim", [
@@ -142,6 +154,12 @@ def test_cat__different_shapes(dim, num_inputs, rank, mocker):
     assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
     assert any('lowered_module' in node.name for node in quantized_program.graph.nodes)
 
+    # NO-UPSTREAM: Make sure the converted variant produces the same input as the original.
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {i: (np.random.random(shape) * 50).astype(np.int8) for i, shape in enumerate(input_shapes)}
+    convert_run_compare(exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data, atol=1)
+
 
 @pytest.mark.parametrize("dim", [
     1, -1, -2
@@ -170,6 +188,12 @@ def test_cat__channels_first__different_shapes(dim, num_inputs, mocker):
     # Make sure the `Cat` was delegated.
     assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
     assert any('lowered_module' in node.name for node in quantized_program.graph.nodes)
+
+    # NO-UPSTREAM: Make sure the converted variant produces the same input as the original.
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    input_data = {i: (np.random.random(shape) * 50).astype(np.int8) for i, shape in enumerate(input_shapes)}
+    convert_run_compare(exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data, atol=1)
 
 
 def test_cat__different_shapes__unsupported_channels__imxrt700():

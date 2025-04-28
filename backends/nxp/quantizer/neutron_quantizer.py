@@ -40,7 +40,10 @@ from executorch.backends.nxp.quantizer.patterns import (
     AbsPattern,
     MeanDimPattern,
     FlattenPattern,
-    DropoutPattern, SharedSpecPattern, SigmoidPattern,
+    DropoutPattern,
+    SigmoidPattern,
+    CatPattern,
+    SharedSpecPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
     find_sequential_partitions_aten,
@@ -213,6 +216,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
                 NeutronAtenQuantizer(FlattenPattern(), static_qconfig),
                 NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
+                NeutronAtenQuantizer(CatPattern(), static_qconfig),
             ]
         )
 

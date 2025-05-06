@@ -272,6 +272,27 @@ class MeanDimPattern(SharedSpecPattern):
         return [torch.ops.aten.mean.dim]
 
 
+def get_anchors_for_softmax_like_operators(fused_partition: List[fx.GraphModule]) -> PartitionAnchors:
+    node = fused_partition[0].nodes[-1]
+    assert len(fused_partition[0].input_nodes) == 1
+
+    qspec = FixedQParamsQuantizationSpec(
+        dtype=torch.int8,
+        scale=1.0 / 256.0,
+        zero_point=-128,
+        quant_min=-128,
+        quant_max=127,
+        qscheme=torch.per_tensor_affine,
+    )
+
+    return PartitionAnchors(
+        inputs=[(node, 0)],
+        weights=[],
+        biases=[],
+        output=[(node, qspec), ],
+    )
+
+
 class SoftMaxPattern(QuantizationPattern):
     """
     Quantizer for Softmax operator.
@@ -285,24 +306,27 @@ class SoftMaxPattern(QuantizationPattern):
     def get_anchors(
             self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        node = fused_partition[0].nodes[-1]
-        assert len(fused_partition[0].input_nodes) == 1
+        return get_anchors_for_softmax_like_operators(fused_partition)
 
-        qspec = FixedQParamsQuantizationSpec(
-            dtype=torch.int8,
-            scale=1.0 / 256.0,
-            zero_point=-128,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_affine,
-        )
+    def replacement_op(self):
+        # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
+        assert False
 
-        return PartitionAnchors(
-            inputs=[(node, 0)],
-            weights=[],
-            biases=[],
-            output=[(node, qspec), ],
-        )
+
+class SigmoidPattern(QuantizationPattern):
+    """
+    Quantizer for Sigmoid operator.
+
+    The quantization of Sigmoid output is fixed to scale 1/256, zero point -128, dtype int8.
+    """
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.sigmoid.default]
+
+    def get_anchors(
+            self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_softmax_like_operators(fused_partition)
 
     def replacement_op(self):
         # TODO The `replacement_op` is leftover from Cadence `QuantizationPattern` class. Shall be never called.
@@ -362,13 +386,14 @@ class NeutronQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(AddTensorPattern(), static_qconfig),
                 CadenceAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                CadenceAtenQuantizer(SigmoidPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReshapePattern(), static_qconfig),
                 CadenceAtenQuantizer(PermutePattern(), static_qconfig),
                 CadenceAtenQuantizer(PadPattern(), static_qconfig),
                 CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(HardTanhPattern(), static_qconfig),
                 CadenceAtenQuantizer(HardTanhInPlacePattern(), static_qconfig),
-                CadenceAtenQuantizer(ReluInPlacePattern(), static_qconfig),
                 CadenceAtenQuantizer(AvgPoolPattern(), static_qconfig),
                 CadenceAtenQuantizer(ViewPattern(), static_qconfig),
                 CadenceAtenQuantizer(AdaptiveAvgPoolPattern(), static_qconfig),

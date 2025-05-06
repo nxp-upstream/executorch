@@ -35,6 +35,7 @@ functions_converters = {
     exir_ops.edge.aten.mean.dim: MeanDimConverter,
     exir_ops.edge.aten.clone.default: CloneConverter,
     exir_ops.edge.aten.abs.default: AbsConverter,
+    exir_ops.edge.aten.sigmoid.default: SigmoidConverter,
 }
 
 

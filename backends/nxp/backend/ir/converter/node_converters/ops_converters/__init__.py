@@ -36,10 +36,12 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     SoftmaxConverter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import \
     ViewCopyConverter
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import \
+    TanhConverter
 
 __all__ = [
     "AddMMConverter", "ConvolutionConverter", "MMConverter", "PermuteCopyConverter", "SoftmaxConverter",
     "ViewCopyConverter", "QDQDequantizeConverter", "QDQQuantizeConverter", "ConstantPadNDConverter", "ReLUConverter",
     "MaxPool2dConverter", "AvgPool2dConverter", "AddTensorConverter", "MeanDimConverter", "AdaptiveAvgPool2dConverter",
-    "CloneConverter", "AbsConverter", "HardTanhConverter", "CatConverter", "SigmoidConverter"
+    "CloneConverter", "AbsConverter", "HardTanhConverter", "CatConverter", "SigmoidConverter", "TanhConverter",
 ]

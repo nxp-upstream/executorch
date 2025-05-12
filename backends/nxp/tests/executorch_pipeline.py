@@ -8,6 +8,7 @@ from torch import nn
 from torch.ao.quantization.quantize_pt2e import prepare_pt2e, convert_pt2e
 
 from executorch import exir
+from executorch.backends.nxp.backend.custom_delegation_options import CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import RemoveIOQuantOpsPass
 from executorch.backends.nxp.edge_passes.nxp_edge_pass_manager import NXPEdgePassManager
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
@@ -65,7 +66,8 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int, .
 
     compile_spec = generate_neutron_compile_spec(target, operators_not_to_delegate=operators_not_to_delegate,
                                                  neutron_converter_flavor=neutron_converter_flavor)
-    partitioner = NeutronPartitioner(compile_spec)
+    custom_delegation_options = CustomDelegationOptions()
+    partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
 
     edge_program_manager = edge_program_manager.to_backend(partitioner)
     return edge_program_manager

@@ -8,13 +8,18 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import torch_type_to_numpy_type
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import set_quantization_parameters_to_tensor
 
 
 class QDQDequantizeConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True
@@ -23,7 +28,11 @@ class QDQDequantizeConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         zero_point_type = torch_type_to_numpy_type(node.args[5])
         if "cluster" not in node.meta or \
             zero_point_type not in [np.int8, np.int32]:

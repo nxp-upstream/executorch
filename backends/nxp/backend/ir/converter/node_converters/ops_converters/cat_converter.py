@@ -7,6 +7,7 @@ import torch
 from torch.fx import Node
 from torch.nn import Parameter
 
+from executorch.backends.nxp.backend.custom_delegation_options import CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
@@ -32,7 +33,12 @@ class CatConverter(NodeConverter):
         return dim
 
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 dim = CatConverter._get_normalized_dim(node)
@@ -45,13 +51,13 @@ class CatConverter(NodeConverter):
                 #  last dimension, depending on the formats of the node. The format, however, cannot be determined
                 #  during conversion, as it depends on what other nodes are delegated.
                 input_channels = [
-                    # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
-                    #  will still be the channels in the IR.
-                    _get_shape(input_)[1] for input_ in node.all_input_nodes
-                ] + [
-                    # If the inputs/outputs are channels first, the last dimension will be the channels.
-                    _get_shape(input_)[-1] for input_ in node.all_input_nodes
-                ]
+                                     # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
+                                     #  will still be the channels in the IR.
+                                     _get_shape(input_)[1] for input_ in node.all_input_nodes
+                                 ] + [
+                                     # If the inputs/outputs are channels first, the last dimension will be the channels.
+                                     _get_shape(input_)[-1] for input_ in node.all_input_nodes
+                                 ]
                 if any((input_channel % 8) != 0 for input_channel in input_channels):
                     # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
                     return False
@@ -71,8 +77,11 @@ class CatConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
-
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         return True
 
     def convert(self, node: Node):

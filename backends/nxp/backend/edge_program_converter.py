@@ -13,6 +13,7 @@ import executorch.backends.nxp.backend.ir.logger as logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import AtenModelBuilderDirector
+from executorch.backends.nxp.backend.ir.converter.node_converter import CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *
 from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference, NodeFormat
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -45,18 +46,26 @@ class EdgeProgramToIRConverter:
     Converter from convertion of ExportedProgram in Edge dialect to IR (TFLite Flatbuffers).
     """
 
-    def convert_program(self, edge_program: ExportedProgram, conversion_config=ConversionConfig()) -> (bytes, dict):
+    def convert_program(
+        self,
+        edge_program: ExportedProgram,
+        conversion_config=ConversionConfig(),
+        custom_delegation_options: CustomDelegationOptions=CustomDelegationOptions()
+    ) -> (bytes, dict):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
         :param edge_program: Converter ExportedProgram.
         :param conversion_config: ConversionConfig instance.
+        :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
         node_formats = NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
-        cc = self.build_conversion_context(parameters_mapping, node_formats, conversion_config)
+        cc = self.build_conversion_context(
+            parameters_mapping, node_formats, conversion_config, custom_delegation_options
+        )
 
         # Program conversion
         self.append_placeholders_and_tensors(edge_program.graph.nodes, cc)
@@ -140,13 +149,16 @@ class EdgeProgramToIRConverter:
         parameters_mapping: dict,
         node_formats: dict[Node, NodeFormat],
         conversion_config: ConversionConfig = ConversionConfig(),
+        custom_delegation_options: CustomDelegationOptions = CustomDelegationOptions()
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(3, "TFLite from EdgeProgram", conversion_config)
 
         # Add "sentinel" buffer (defined in schema.fbs)
         tflite_builder.build_empty_buffer()
 
-        context = ConversionContext(tflite_builder, conversion_config, parameters_mapping, node_formats)
+        context = ConversionContext(
+            tflite_builder, conversion_config, parameters_mapping, node_formats, custom_delegation_options
+        )
 
         return context
 

@@ -2,7 +2,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
 #
 # Main implementation of AoT flow to partition and preprocess for Neutron target
 # backends.
@@ -161,7 +160,7 @@ class NeutronBackend(BackendDetails):
             edge_program = XNNPACKPassManager(edge_program, [RemoveGetItemPass]).transform()
 
             # Convert the edge program to TFLite.
-            tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program)
+            tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(edge_program, )
 
             neutron_model = NeutronConverterManager().convert(tflite_model, target, neutron_converter_flavor)
 

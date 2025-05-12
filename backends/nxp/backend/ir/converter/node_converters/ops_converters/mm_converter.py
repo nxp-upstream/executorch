@@ -8,13 +8,18 @@ from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import fully_connected_options
 
 
 class MMConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True
@@ -23,7 +28,11 @@ class MMConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         if len(node.all_input_nodes) != 2:
             return False
 

@@ -5,8 +5,9 @@
 
 import torch
 from torch.fx import Node
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
 from torch.nn import Parameter
+
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 
 
 def _has_supported_memory_format(node: Node) -> bool:
@@ -15,9 +16,15 @@ def _has_supported_memory_format(node: Node) -> bool:
 
     return True
 
+
 class CloneConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True
@@ -26,7 +33,11 @@ class CloneConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         return _has_supported_memory_format(node)
 
     def convert(self, node: Node):

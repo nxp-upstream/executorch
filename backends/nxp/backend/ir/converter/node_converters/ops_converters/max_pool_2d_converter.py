@@ -8,7 +8,7 @@ from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import max_pool_2d_options
@@ -18,8 +18,14 @@ class MaxPool2dConverter(NodeConverter):
     """ Convert 'max_pool2d' operator to TFLite 'MaxPool2D'.
         NOTE: max_pool2d_with_indices is a different operator and is unsupported.
     """
+
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True
@@ -28,7 +34,11 @@ class MaxPool2dConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         n_args = len(node.args)
 
         dilation = node.args[4] if n_args >= 5 else [1, 1]

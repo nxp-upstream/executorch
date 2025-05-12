@@ -9,7 +9,7 @@ from torch.nn import Parameter
 
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import \
     create_channels_last_to_channels_first_permutation
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import \
     convert_axes_from_attribute
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import mean_options
@@ -17,7 +17,12 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 class MeanDimConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 dim = node.args[1]
@@ -36,7 +41,11 @@ class MeanDimConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         if hasattr(node.kwargs, "dtype") and node.kwargs["dtype"] not in [torch.float32, torch.uint32, torch.uint8]:
             return False
 

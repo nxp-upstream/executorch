@@ -8,13 +8,18 @@
 from torch.fx import Node
 from torch.nn import Parameter
 
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import BuiltinOperator
 
 
 class SigmoidConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 return True
@@ -23,7 +28,11 @@ class SigmoidConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         return True
 
     def convert(self, node: Node):
@@ -33,4 +42,3 @@ class SigmoidConverter(NodeConverter):
         t_op.opcode_index = self.builder.op_code_index_for_op_type(BuiltinOperator.LOGISTIC)
 
         self.builder.append_operators([t_op])
-

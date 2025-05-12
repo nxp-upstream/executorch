@@ -12,7 +12,7 @@ from executorch.backends.nxp.backend.edge_helper import input_tensor, input_tens
     node_is_effectively_static_tensor
 from executorch.backends.nxp.backend.ir.converter.conversion import common, aten_translator, translator
 from executorch.backends.nxp.backend.ir.converter.conversion.common import try_get_input
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter, Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared import conv_utils
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.conv_utils import ConvConversionResult, \
     ConvParameters
@@ -26,7 +26,12 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 class ConvolutionConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 activations = node.args[0]
@@ -57,7 +62,11 @@ class ConvolutionConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         input_tensor_rank = len(node.meta["val"].shape)
         dimensions = input_tensor_rank - 2
         is_transposed = node.args[6]
@@ -158,7 +167,6 @@ class ConvolutionConverter(NodeConverter):
         converted_conv_ops = self._convert_2d_conv(t_op, conv_params)
 
         return pre_reshapes + converted_conv_ops + [reshape2]
-
 
     # noinspection PyPep8Naming
     def _convert_unpadded_2D(self, t_op: tflite_model.Operator, conv_params: ConvParameters

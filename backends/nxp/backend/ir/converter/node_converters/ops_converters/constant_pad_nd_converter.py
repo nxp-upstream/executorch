@@ -14,7 +14,7 @@ from executorch.backends.nxp.backend.edge_helper import input_rank
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import tf_lite_type_to_numpy, \
     create_channels_first_to_channels_last_permutation, apply_permutation_to
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
+from executorch.backends.nxp.backend.ir.converter.node_converter import Target, CustomDelegationOptions
 from executorch.backends.nxp.backend.ir.converter.quantization_utils import quantize_int8
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import pad_v2_options, pad_options
@@ -22,7 +22,12 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
 
 class ConstantPadNDConverter(NodeConverter):
     @staticmethod
-    def _is_supported_on_target(node: Node, target: Target, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         match target:
             case Target.RT700:
                 paddings = node.args[1]
@@ -36,7 +41,11 @@ class ConstantPadNDConverter(NodeConverter):
                 return False
 
     @staticmethod
-    def _is_supported_in_IR(node: Node, parameters_mapping: dict[str, Parameter]) -> bool:
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions
+    ) -> bool:
         paddings = node.args[1]
 
         # https://github.com/pytorch/pytorch/blob/v2.4.0/aten/src/ATen/native/PadNd.cpp#L38-L40

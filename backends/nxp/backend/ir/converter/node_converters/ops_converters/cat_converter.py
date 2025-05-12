@@ -39,6 +39,9 @@ class CatConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions
     ) -> bool:
+        if custom_delegation_options.force_delegate_cat:
+            return True
+
         match target:
             case Target.RT700:
                 dim = CatConverter._get_normalized_dim(node)

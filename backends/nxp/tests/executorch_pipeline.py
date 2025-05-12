@@ -36,10 +36,15 @@ def get_random_float_data(input_shapes: tuple[int] | list[tuple[int]]):
         else tuple(torch.randn(input_shape) for input_shape in input_shapes)
 
 
-def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int, ...] | list[tuple[int, ...]],
-                              operators_not_to_delegate: list[str] = None, target="imxrt700",
-                              neutron_converter_flavor="wrapper", remove_quant_io_ops=False
-                              ) -> EdgeProgramManager:
+def to_quantized_edge_program(
+    model: torch.nn.Module,
+    input_shapes: tuple[int, ...] | list[tuple[int, ...]],
+    operators_not_to_delegate: list[str] = None,
+    target="imxrt700",
+    neutron_converter_flavor="wrapper",
+    remove_quant_io_ops=False,
+    custom_delegation_options=CustomDelegationOptions()
+) -> EdgeProgramManager:
     if isinstance(input_shapes, list):
         assert all([isinstance(input_shape, tuple) for input_shape in input_shapes]), ("For multiple inputs, provide"
                                                                                        " list[tuple[int]].")
@@ -66,7 +71,6 @@ def to_quantized_edge_program(model: torch.nn.Module, input_shapes: tuple[int, .
 
     compile_spec = generate_neutron_compile_spec(target, operators_not_to_delegate=operators_not_to_delegate,
                                                  neutron_converter_flavor=neutron_converter_flavor)
-    custom_delegation_options = CustomDelegationOptions()
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
 
     edge_program_manager = edge_program_manager.to_backend(partitioner)

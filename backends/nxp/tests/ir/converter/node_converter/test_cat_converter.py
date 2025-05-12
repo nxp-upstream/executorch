@@ -8,6 +8,7 @@ import pytest
 import torch
 from torch.export import ExportedProgram
 
+from executorch.backends.nxp.backend.custom_delegation_options import CustomDelegationOptions
 from executorch.backends.nxp.backend.edge_program_converter import EdgeProgramToIRConverter
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
 from executorch.backends.nxp.tests.executors import convert_run_compare, graph_contains_any_of_ops
@@ -214,3 +215,22 @@ def test_cat__different_shapes__unsupported_channels__imxrt700():
     # Make sure the `Cat` was NOT delegated.
     assert graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
     assert not any('lowered_module' in node.name for node in quantized_program.graph.nodes)
+
+
+def test_cat__force_delegate():
+    target = 'imxrt700'
+
+    # The Partitioner doesn't know if the `8` or the `1` will become the channels in the IR. Therefore, it would
+    #  normally not delegate the `cat`. But we know that the `8` will be the channels, so we can force the delegation.
+    input_shape = (8, 1, 8)
+
+    quantized_program = to_quantized_edge_program(
+        CatModule(1),
+        [input_shape, input_shape],
+        target=target,
+        custom_delegation_options=CustomDelegationOptions(force_delegate_cat=True)
+    ).exported_program()
+
+    # Make sure the `Cat` was delegated.
+    assert not graph_contains_any_of_ops(graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default])
+    assert any('lowered_module' in node.name for node in quantized_program.graph.nodes)

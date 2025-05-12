@@ -10,4 +10,4 @@ from dataclasses import dataclass
 @dataclass
 class CustomDelegationOptions:
     """ The class allows the user to specify details which affect which nodes will be delegated. """
-    pass
+    force_delegate_cat: bool = False

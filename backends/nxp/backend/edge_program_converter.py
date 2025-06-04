@@ -1,7 +1,9 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import operator
 
 import executorch.backends.nxp.backend.ir.logger as logger
 import flatbuffers
@@ -15,6 +17,9 @@ from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.get_item_converter import (
+    GetItemConverter,
+)
 from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormat,
     NodeFormatInference,
@@ -131,6 +136,11 @@ class EdgeProgramToIRConverter:
                 if node.target in qdq_related_functions and "cluster" in node.meta:
                     # Skip (De)Quantize nodes that were already processed
                     pass
+                elif node.target == operator.getitem and node.meta.get(
+                    "processed", False
+                ):
+                    # The node was already processed alongside the Q/DQ ops.
+                    pass
                 elif node.target in functions_converters:
                     functions_converters[node.target](conversion_context).convert(node)
                 else:
@@ -180,11 +190,11 @@ class EdgeProgramToIRConverter:
         self, nodes: list[Node], conversion_context: ConversionContext
     ):
         """
-        Go through program and convert De(Quantize) nodes that are part of the QDQ cluster into
-        tensors.
-
-        :param nodes: Program's nodes.
-        :param conversion_context: ConversionContext instance.
+                Go through program and convert De(Quantize) nodes that are part of the QDQ cluster into tensors.
+                Also convert related `GetItem` nodes to NO-OPs, which just propagate the quantization.
+        s
+                :param nodes: Program's nodes.
+                :param conversion_context: ConversionContext instance.
         """
         qdq_q_ops_converters = {
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQDequantizeConverter,  # noqa F405
@@ -199,3 +209,14 @@ class EdgeProgramToIRConverter:
                 and part_of_qdq_cluster
             ):
                 qdq_q_ops_converters[node.target](conversion_context).convert(node)
+
+        # It is possible (and common) for `GetItem` nodes to be a part of a QDQ cluster. In these cases, they consume
+        #  an output of the main compute operator, and they are followed by a `Quantize` operator, which specifies the
+        #  output quantization parameters of the cluster. So the input of the `GetItem` is float32, and the output is
+        #  quantized. Therefore, the quantization must be propagated from the output to the input.
+        for node in nodes:
+            if node.name.startswith("getitem"):
+                # Convert the builtin function into a "NO-OP" in the IR, and propagate the quantization parameters in
+                #  reverse.
+                GetItemConverter(conversion_context).convert(node)
+                node.meta["processed"] = True

@@ -189,6 +189,7 @@ class NeutronBackend(BackendDetails):
                     class_only=True,
                     core_aten_ops_exception_list=[
                         torch.ops.aten.max_pool2d.default,
+                        torch.ops.aten.pad.default,
                         torch.ops.aten.prelu.default,
                     ],
                 )
@@ -211,9 +212,15 @@ class NeutronBackend(BackendDetails):
                 conversion_config=conversion_config,
             )
 
+            with open("input.tflite", "wb") as f:
+                f.write(tflite_model)
+
             neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
                 tflite_model, target
             )
+
+            with open("converted.tflite", "wb") as f:
+                f.write(neutron_model)
 
             # Dump the tflite file if logging level is enabled
             if logging.root.isEnabledFor(logging.DEBUG):

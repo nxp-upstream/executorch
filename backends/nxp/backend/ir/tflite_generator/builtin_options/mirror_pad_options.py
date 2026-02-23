@@ -45,7 +45,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.meta import meta
 class MirrorPad(meta.BuiltinOptions):
     mode: MirrorPadMode
 
-    def __init__(self, mode: MirrorPadMode = MirrorPadMode.REFLECT) -> None:
+    def __init__(self, mode: MirrorPadMode | int= MirrorPadMode.REFLECT) -> None:
         super().__init__(
             BuiltinOptions.BuiltinOptions.MirrorPadOptions,
             BuiltinOperator.BuiltinOperator.MIRROR_PAD,

@@ -81,6 +81,7 @@ class NeutronConverterManager:
 
         :return: TFLite model with Neutron microcode as bytes.
         """
+        use_new_flow_neutron_c = True
         # Neutron converter crashes if we provide invalid target -> verify.
         self.verify_target(target)
 
